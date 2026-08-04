@@ -1,0 +1,230 @@
+@inject PortfolioApiService ApiService
+@inject IJSRuntime JS
+
+<div class="modal fade @(IsVisible ? "show d-block" : "")" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add New Investment</h5>
+                <button type="button" class="btn-close" @onclick="Close"></button>
+            </div>
+            <div class="modal-body">
+                @if (!SymbolSelected)
+                {
+                    <div class="mb-3">
+                        <label class="form-label">Search Symbol</label>
+                        <div class="input-group">
+                            <input type="text" class="form-control" @bind="SearchQuery" @bind:event="oninput" placeholder="e.g. AAPL, MSCIWORLD, BABA" />
+                            <button class="btn btn-primary" @onclick="Search" disabled="@IsSearching">
+                                @if (IsSearching)
+                                {
+                                    <span class="spinner-border spinner-border-sm"></span>
+                                }
+                                else
+                                {
+                                    <span>Search</span>
+                                }
+                            </button>
+                        </div>
+                    </div>
+
+                    @if (SearchResults != null)
+                    {
+                        <div class="list-group">
+                            @foreach (var result in SearchResults)
+                            {
+                                <button class="list-group-item list-group-item-action" @onclick="() => SelectSymbol(result)">
+                                    <strong>@result.Symbol</strong> - @result.Name
+                                    <small class="text-muted">(@result.Type)</small>
+                                </button>
+                            }
+                        </div>
+                    }
+
+                    @if (NoResults)
+                    {
+                        <div class="alert alert-warning mt-3">No results found for "@SearchQuery"</div>
+                    }
+                }
+                else
+                {
+                    <div class="alert alert-info">
+                        <strong>@SelectedSymbol?.Symbol</strong> - @SelectedSymbol?.Name
+                        <button class="btn btn-sm btn-link" @onclick="ChangeSymbol">Change</button>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Shares</label>
+                        <input type="number" class="form-control" @bind="Shares" step="0.0001" min="0.0001" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Purchase Price (per share)</label>
+                        <div class="input-group">
+                            <span class="input-group-text">€</span>
+                            <input type="number" class="form-control" @bind="PurchasePrice" step="0.0001" min="0.01" />
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Purchase Date (optional)</label>
+                        <input type="date" class="form-control" @bind="PurchaseDate" />
+                    </div>
+
+                    @if (HasError)
+                    {
+                        <div class="alert alert-danger">@ErrorMessage</div>
+                    }
+                }
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" @onclick="Close">Cancel</button>
+                @if (SymbolSelected)
+                {
+                    <button type="button" class="btn btn-primary" @onclick="Save" disabled="@IsSaving">
+                        @if (IsSaving)
+                        {
+                            <span class="spinner-border spinner-border-sm"></span>
+                        }
+                        else
+                        {
+                            <span>Add Investment</span>
+                        }
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public bool IsVisible { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> IsVisibleChanged { get; set; }
+
+    [Parameter]
+    public Guid UserId { get; set; }
+
+    [Parameter]
+    public EventCallback OnItemAdded { get; set; }
+
+    private bool SymbolSelected => SelectedSymbol != null;
+    private string SearchQuery { get; set; } = "";
+    private bool IsSearching { get; set; }
+    private bool NoResults { get; set; }
+    private List<SearchResultDto>? SearchResults { get; set; }
+    private SearchResultDto? SelectedSymbol { get; set; }
+    private decimal Shares { get; set; }
+    private decimal PurchasePrice { get; set; }
+    private DateTime? PurchaseDate { get; set; }
+    private bool IsSaving { get; set; }
+    private bool HasError { get; set; }
+    private string ErrorMessage { get; set; } = "";
+
+    private async Task Search()
+    {
+        if (string.IsNullOrWhiteSpace(SearchQuery))
+            return;
+
+        IsSearching = true;
+        NoResults = false;
+        SearchResults = null;
+
+        try
+        {
+            var result = await ApiService.SearchSymbolAsync(SearchQuery);
+            if (result != null)
+            {
+                SearchResults = [result];
+            }
+            else
+            {
+                NoResults = true;
+            }
+        }
+        finally
+        {
+            IsSearching = false;
+        }
+    }
+
+    private void SelectSymbol(SearchResultDto result)
+    {
+        SelectedSymbol = result;
+        SearchResults = null;
+        SearchQuery = "";
+        NoResults = false;
+    }
+
+    private void ChangeSymbol()
+    {
+        SelectedSymbol = null;
+        SearchQuery = "";
+    }
+
+    private async Task Save()
+    {
+        if (SelectedSymbol == null || Shares <= 0 || PurchasePrice <= 0)
+        {
+            HasError = true;
+            ErrorMessage = "Please fill all required fields.";
+            return;
+        }
+
+        IsSaving = true;
+        HasError = false;
+
+        try
+        {
+            var request = new CreatePortfolioItemRequest
+            {
+                UserId = UserId,
+                Symbol = SelectedSymbol.Symbol,
+                Name = SelectedSymbol.Name,
+                Type = SelectedSymbol.Type,
+                Shares = Shares,
+                PurchasePrice = PurchasePrice,
+                PurchaseDate = PurchaseDate
+            };
+
+            var result = await ApiService.AddItemAsync(request);
+            if (result != null)
+            {
+                await OnItemAdded.InvokeAsync();
+                await Close();
+            }
+            else
+            {
+                HasError = true;
+                ErrorMessage = "Failed to add investment. It may already exist in your portfolio.";
+            }
+        }
+        catch (Exception ex)
+        {
+            HasError = true;
+            ErrorMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            IsSaving = false;
+        }
+    }
+
+    private async Task Close()
+    {
+        SearchQuery = "";
+        IsSearching = false;
+        NoResults = false;
+        SearchResults = null;
+        SelectedSymbol = null;
+        Shares = 0;
+        PurchasePrice = 0;
+        PurchaseDate = null;
+        IsSaving = false;
+        HasError = false;
+        ErrorMessage = "";
+        await IsVisibleChanged.InvokeAsync(false);
+    }
+}

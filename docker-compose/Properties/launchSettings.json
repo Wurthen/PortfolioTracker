@@ -1,0 +1,13 @@
+{
+  "profiles": {
+    "Docker Compose": {
+      "commandName": "DockerCompose",
+      "composeFile": "docker-compose.yml",
+      "serviceActions": {
+        "blazor": "StartDebugging"
+      },
+      "browserWebSocketPort": 0,
+      "useWebSocket": false
+    }
+  }
+}

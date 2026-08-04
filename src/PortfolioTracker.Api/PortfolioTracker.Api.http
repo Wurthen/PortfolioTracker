@@ -1,0 +1,6 @@
+@PortfolioTracker.Api_HostAddress = http://localhost:5208
+
+GET {{PortfolioTracker.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

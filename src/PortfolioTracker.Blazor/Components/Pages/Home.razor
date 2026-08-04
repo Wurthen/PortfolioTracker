@@ -1,0 +1,285 @@
+﻿@page "/"
+@inject PortfolioApiService ApiService
+@inject IJSRuntime JS
+@inject UserIdService UserIdService
+@inject ILogger<Home> Logger
+
+<PageTitle>My Portfolio</PageTitle>
+
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h2 mb-0">My Portfolio</h1>
+        <button class="btn btn-primary" @onclick="ShowAddDialog">
+            <span class="oi oi-plus me-1"></span>
+            Add Investment
+        </button>
+    </div>
+
+    <p>UserId: @UserIdService.UserId</p>
+    <p>IsLoading: @IsLoading</p>
+    <p>showAddDialog: @showAddDialog</p>
+
+    @if (IsLoading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-2 text-muted">Loading...</p>
+        </div>
+    }
+    else if (PortfolioItems.Count == 0)
+    {
+        <div class="text-center py-5 bg-light rounded">
+            <p class="text-muted mb-3">Your portfolio is empty</p>
+            <button class="btn btn-primary" @onclick="ShowAddDialog">Add your first investment</button>
+        </div>
+    }
+    else
+    {
+        <div class="card mb-4">
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <small class="text-muted">Total Value</small>
+                        <div class="h4 mb-0 text-success">@TotalValue.ToString("C2")</div>
+                    </div>
+                    <div class="col-md-3">
+                        <small class="text-muted">Total Gain/Loss</small>
+                        <div class="h4 mb-0 @TotalGainLossClass">@TotalGainLoss.ToString("C2")</div>
+                    </div>
+                    <div class="col-md-3">
+                        <small class="text-muted">Total Gain/Loss %</small>
+                        <div class="h4 mb-0 @TotalGainLossClass">@TotalGainLossPercent.ToString("F2")%</div>
+                    </div>
+                    <div class="col-md-3">
+                        <small class="text-muted">Investments</small>
+                        <div class="h4 mb-0">@PortfolioItems.Count</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Name</th>
+                        <th class="text-end">Shares</th>
+                        <th class="text-end">Purchase Price</th>
+                        <th class="text-end">Current Price</th>
+                        <th class="text-end">Current Value</th>
+                        <th class="text-end">Gain/Loss</th>
+                        <th class="text-end">Gain/Loss %</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in PortfolioItems)
+                    {
+                        <tr>
+                            <td><strong>@item.Symbol</strong></td>
+                            <td>@item.Name</td>
+                            <td class="text-end">@item.Shares.ToString("N4")</td>
+                            <td class="text-end">@item.PurchasePrice.ToString("C4")</td>
+                            <td class="text-end">@item.CurrentPrice.ToString("C4")</td>
+                            <td class="text-end">@item.CurrentValue.ToString("C2")</td>
+                            <td class="text-end @GetGainLossClass(item.GainLoss)">@item.GainLoss.ToString("C2")</td>
+                            <td class="text-end @GetGainLossClass(item.GainLossPercent)">@item.GainLossPercent.ToString("F2")%</td>
+                            <td class="text-end">
+                                <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => ShowEditDialog(item)">
+                                    <span class="oi oi-pencil"></span>
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger" @onclick="() => ConfirmDelete(item)">
+                                    <span class="oi oi-trash"></span>
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<AddItemDialog 
+    @bind-IsVisible="showAddDialog" 
+    UserId="UserIdService.UserId" 
+    OnItemAdded="RefreshPortfolio" />
+
+<EditItemDialog 
+    @bind-IsVisible="showEditDialog" 
+    Item="selectedItem" 
+    UserId="UserIdService.UserId" 
+    OnItemUpdated="RefreshPortfolio" />
+
+@if (showDeleteConfirm && itemToDelete != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Delete Investment</h5>
+                    <button type="button" class="btn-close" @onclick="CancelDelete"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete <strong>@itemToDelete.Symbol</strong> from your portfolio?</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CancelDelete">Cancel</button>
+                    <button type="button" class="btn btn-danger" @onclick="DeleteItem" disabled="@isDeleting">
+                        @if (isDeleting)
+                        {
+                            <span class="spinner-border spinner-border-sm"></span>
+                        }
+                        else
+                        {
+                            <span>Delete</span>
+                        }
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (hasError)
+{
+    <div class="alert alert-danger position-fixed bottom-0 end-0 m-3" style="z-index: 9999;">
+        @errorMessage
+        <button type="button" class="btn-close" @onclick="DismissError"></button>
+    </div>
+}
+
+@code {
+    private List<PortfolioItemDto> PortfolioItems { get; set; } = [];
+    private bool IsLoading { get; set; } = false;
+    private bool showAddDialog { get; set; } = false;
+    private bool showEditDialog { get; set; } = false;
+    private PortfolioItemDto? selectedItem;
+    private bool showDeleteConfirm { get; set; } = false;
+    private PortfolioItemDto? itemToDelete;
+    private bool isDeleting;
+    private bool hasError = false;
+    private string errorMessage = "";
+
+    private decimal TotalValue => PortfolioItems.Sum(p => p.CurrentValue);
+    private decimal TotalGainLoss => PortfolioItems.Sum(p => p.GainLoss);
+    private decimal TotalGainLossPercent => PortfolioItems.Count > 0 ? (TotalGainLoss / (PortfolioItems.Sum(p => p.Shares * p.PurchasePrice))) * 100 : 0;
+
+    private string TotalGainLossClass => GetGainLossClass(TotalGainLoss);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && UserIdService.UserId == Guid.Empty)
+        {
+            try
+            {
+                var userId = await JS.InvokeAsync<string?>("localStorage.getItem", "portfolio_user_id");
+                if (string.IsNullOrEmpty(userId) || !Guid.TryParse(userId, out var guid))
+                {
+                    guid = Guid.NewGuid();
+                    await JS.InvokeAsync<object>("localStorage.setItem", "portfolio_user_id", guid.ToString());
+                }
+                UserIdService.UserId = guid;
+                await RefreshPortfolio();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Error initializing user");
+                ShowError($"Initialization error: {ex.Message}");
+                UserIdService.UserId = Guid.NewGuid();
+            }
+        }
+    }
+
+    private async Task RefreshPortfolio()
+    {
+        if (UserIdService.UserId == Guid.Empty)
+            return;
+
+        IsLoading = true;
+        try
+        {
+            Logger.LogInformation("Fetching portfolio for user {UserId}", UserIdService.UserId);
+            PortfolioItems = await ApiService.GetPortfolioAsync(UserIdService.UserId);
+            Logger.LogInformation("Portfolio loaded: {Count} items", PortfolioItems.Count);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading portfolio");
+            ShowError($"Error loading portfolio: {ex.Message}");
+            PortfolioItems = [];
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private void ShowAddDialog()
+    {
+        Logger.LogInformation("ShowAddDialog called");
+        showAddDialog = true;
+    }
+
+    private void ShowEditDialog(PortfolioItemDto item)
+    {
+        Logger.LogInformation("ShowEditDialog called for {Symbol}", item.Symbol);
+        selectedItem = item;
+        showEditDialog = true;
+    }
+
+    private void ConfirmDelete(PortfolioItemDto item)
+    {
+        Logger.LogInformation("ConfirmDelete called for {Symbol}", item.Symbol);
+        itemToDelete = item;
+        showDeleteConfirm = true;
+    }
+
+    private void CancelDelete()
+    {
+        itemToDelete = null;
+        showDeleteConfirm = false;
+    }
+
+    private async Task DeleteItem()
+    {
+        if (itemToDelete == null) return;
+
+        isDeleting = true;
+        try
+        {
+            await ApiService.DeleteItemAsync(itemToDelete.Id, UserIdService.UserId);
+            await RefreshPortfolio();
+            CancelDelete();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error deleting item");
+            ShowError($"Error deleting: {ex.Message}");
+        }
+        finally
+        {
+            isDeleting = false;
+        }
+    }
+
+    private void ShowError(string message)
+    {
+        errorMessage = message;
+        hasError = true;
+    }
+
+    private void DismissError()
+    {
+        hasError = false;
+        errorMessage = "";
+    }
+
+    private static string GetGainLossClass(decimal value) => value switch
+    {
+        > 0 => "text-success",
+        < 0 => "text-danger",
+        _ => "text-muted"
+    };
+}

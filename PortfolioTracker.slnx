@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/PortfolioTracker.Api/PortfolioTracker.Api.csproj" />
+    <Project Path="src/PortfolioTracker.Blazor/PortfolioTracker.Blazor.csproj" />
+  </Folder>
+  <Project Path="docker-compose.dcproj">
+    <Build />
+  </Project>
+</Solution>

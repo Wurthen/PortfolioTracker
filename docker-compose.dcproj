@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" Sdk="Microsoft.Docker.Sdk/1.1.0">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <DockerComposeFile>docker-compose.yml</DockerComposeFile>
+    <RootNamespace>PortfolioTracker.Compose</RootNamespace>
+    <DockerTargetOS>Linux</DockerTargetOS>
+    <ProjectVersion>2.1</ProjectVersion>
+    <DockerLaunchAction>LaunchBrowser</DockerLaunchAction>
+    <DockerLaunchUrl>http://localhost:8081</DockerLaunchUrl>
+    <DockerServiceName>blazor</DockerServiceName>
+    <DockerServiceUrl>http://localhost:8081</DockerServiceUrl>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="docker-compose\Properties\launchSettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+</Project>

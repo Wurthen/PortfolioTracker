@@ -1,0 +1,142 @@
+@inject PortfolioApiService ApiService
+
+<div class="modal fade @(IsVisible ? "show d-block" : "")" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Investment</h5>
+                <button type="button" class="btn-close" @onclick="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-secondary">
+                    <strong>@Item?.Symbol</strong> - @Item?.Name
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Shares</label>
+                    <input type="number" class="form-control" @bind="Shares" step="0.0001" min="0.0001" />
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Purchase Price (per share)</label>
+                    <div class="input-group">
+                        <span class="input-group-text">€</span>
+                        <input type="number" class="form-control" @bind="PurchasePrice" step="0.0001" min="0.01" />
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Purchase Date (optional)</label>
+                    <input type="date" class="form-control" @bind="PurchaseDate" />
+                </div>
+
+                @if (HasError)
+                {
+                    <div class="alert alert-danger">@ErrorMessage</div>
+                }
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" @onclick="Close">Cancel</button>
+                <button type="button" class="btn btn-primary" @onclick="Save" disabled="@IsSaving">
+                    @if (IsSaving)
+                    {
+                        <span class="spinner-border spinner-border-sm"></span>
+                    }
+                    else
+                    {
+                        <span>Save Changes</span>
+                    }
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public bool IsVisible { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> IsVisibleChanged { get; set; }
+
+    [Parameter]
+    public PortfolioItemDto? Item { get; set; }
+
+    [Parameter]
+    public Guid UserId { get; set; }
+
+    [Parameter]
+    public EventCallback OnItemUpdated { get; set; }
+
+    private decimal Shares { get; set; }
+    private decimal PurchasePrice { get; set; }
+    private DateTime? PurchaseDate { get; set; }
+    private bool IsSaving { get; set; }
+    private bool HasError { get; set; }
+    private string ErrorMessage { get; set; } = "";
+
+    protected override void OnParametersSet()
+    {
+        if (Item != null)
+        {
+            Shares = Item.Shares;
+            PurchasePrice = Item.PurchasePrice;
+            PurchaseDate = Item.PurchaseDate;
+        }
+    }
+
+    private async Task Save()
+    {
+        if (Item == null || Shares <= 0 || PurchasePrice <= 0)
+        {
+            HasError = true;
+            ErrorMessage = "Please fill all required fields.";
+            return;
+        }
+
+        IsSaving = true;
+        HasError = false;
+
+        try
+        {
+            var request = new UpdatePortfolioItemRequest
+            {
+                Shares = Shares,
+                PurchasePrice = PurchasePrice,
+                PurchaseDate = PurchaseDate
+            };
+
+            var result = await ApiService.UpdateItemAsync(Item.Id, UserId, request);
+            if (result != null)
+            {
+                await OnItemUpdated.InvokeAsync();
+                await Close();
+            }
+            else
+            {
+                HasError = true;
+                ErrorMessage = "Failed to update investment.";
+            }
+        }
+        catch (Exception ex)
+        {
+            HasError = true;
+            ErrorMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            IsSaving = false;
+        }
+    }
+
+    private async Task Close()
+    {
+        Shares = 0;
+        PurchasePrice = 0;
+        PurchaseDate = null;
+        IsSaving = false;
+        HasError = false;
+        ErrorMessage = "";
+        await IsVisibleChanged.InvokeAsync(false);
+    }
+}
