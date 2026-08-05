@@ -9,10 +9,13 @@ public class PortfolioItemDto
     public decimal Shares { get; set; }
     public decimal PurchasePrice { get; set; }
     public DateTime? PurchaseDate { get; set; }
+    public decimal Commission { get; set; }
+    public decimal CurrentPriceUsd { get; set; }
     public decimal CurrentPrice { get; set; }
     public decimal CurrentValue { get; set; }
     public decimal GainLoss { get; set; }
     public decimal GainLossPercent { get; set; }
+    public string Currency { get; set; } = "EUR";
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }

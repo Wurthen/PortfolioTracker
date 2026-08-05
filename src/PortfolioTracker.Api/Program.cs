@@ -10,7 +10,9 @@ builder.Services.AddDbContext<PortfolioDbContext>(options =>
         ?? "Host=localhost;Database=portfolio;Username=postgres;Password=postgres"));
 
 builder.Services.AddHttpClient<YahooFinanceService>();
+builder.Services.AddHttpClient<CurrencyService>();
 builder.Services.AddScoped<PortfolioService>();
+builder.Services.AddMemoryCache();
 
 builder.Services.AddCors(options =>
 {
@@ -27,7 +29,7 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<PortfolioDbContext>();
-    db.Database.EnsureCreated();
+    db.Database.Migrate();
 }
 
 app.UseCors();

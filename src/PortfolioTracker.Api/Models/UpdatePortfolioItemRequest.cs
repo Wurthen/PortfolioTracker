@@ -5,4 +5,5 @@ public class UpdatePortfolioItemRequest
     public decimal Shares { get; set; }
     public decimal PurchasePrice { get; set; }
     public DateTime? PurchaseDate { get; set; }
+    public decimal Commission { get; set; }
 }

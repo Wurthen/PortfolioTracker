@@ -1,4 +1,5 @@
 ﻿@page "/"
+@rendermode InteractiveServer
 @inject PortfolioApiService ApiService
 @inject IJSRuntime JS
 @inject UserIdService UserIdService
@@ -40,11 +41,11 @@
                 <div class="row">
                     <div class="col-md-3">
                         <small class="text-muted">Total Value</small>
-                        <div class="h4 mb-0 text-success">@TotalValue.ToString("C2")</div>
+                        <div class="h4 mb-0 text-success">@TotalValue.ToString("N2") €</div>
                     </div>
                     <div class="col-md-3">
                         <small class="text-muted">Total Gain/Loss</small>
-                        <div class="h4 mb-0 @TotalGainLossClass">@TotalGainLoss.ToString("C2")</div>
+                        <div class="h4 mb-0 @TotalGainLossClass">@TotalGainLoss.ToString("N2") €</div>
                     </div>
                     <div class="col-md-3">
                         <small class="text-muted">Total Gain/Loss %</small>
@@ -66,7 +67,8 @@
                         <th>Name</th>
                         <th class="text-end">Shares</th>
                         <th class="text-end">Purchase Price</th>
-                        <th class="text-end">Current Price</th>
+                        <th class="text-end">Current Price (USD)</th>
+                        <th class="text-end">Current Price (EUR)</th>
                         <th class="text-end">Current Value</th>
                         <th class="text-end">Gain/Loss</th>
                         <th class="text-end">Gain/Loss %</th>
@@ -80,10 +82,11 @@
                             <td><strong>@item.Symbol</strong></td>
                             <td>@item.Name</td>
                             <td class="text-end">@item.Shares.ToString("N4")</td>
-                            <td class="text-end">@item.PurchasePrice.ToString("C4")</td>
-                            <td class="text-end">@item.CurrentPrice.ToString("C4")</td>
-                            <td class="text-end">@item.CurrentValue.ToString("C2")</td>
-                            <td class="text-end @GetGainLossClass(item.GainLoss)">@item.GainLoss.ToString("C2")</td>
+                            <td class="text-end">@item.PurchasePrice.ToString("N4") €</td>
+                            <td class="text-end">$@item.CurrentPriceUsd.ToString("N4")</td>
+                            <td class="text-end">@item.CurrentPrice.ToString("N4") €</td>
+                            <td class="text-end">@item.CurrentValue.ToString("N2") €</td>
+                            <td class="text-end @GetGainLossClass(item.GainLoss)">@item.GainLoss.ToString("N2") €</td>
                             <td class="text-end @GetGainLossClass(item.GainLossPercent)">@item.GainLossPercent.ToString("F2")%</td>
                             <td class="text-end">
                                 <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => ShowEditDialog(item)">
@@ -168,28 +171,50 @@
 
     private string TotalGainLossClass => GetGainLossClass(TotalGainLoss);
 
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshPortfolioWithRetry();
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender && UserIdService.UserId == Guid.Empty)
+        if (firstRender)
+        {
+            await RefreshPortfolio();
+            StateHasChanged();
+        }
+    }
+
+    private async Task RefreshPortfolioWithRetry(int maxRetries = 5, int delayMs = 2000)
+    {
+        if (UserIdService.UserId == Guid.Empty)
+            return;
+
+        IsLoading = true;
+        for (int i = 0; i < maxRetries; i++)
         {
             try
             {
-                var userId = await JS.InvokeAsync<string?>("localStorage.getItem", "portfolio_user_id");
-                if (string.IsNullOrEmpty(userId) || !Guid.TryParse(userId, out var guid))
-                {
-                    guid = Guid.NewGuid();
-                    await JS.InvokeAsync<object>("localStorage.setItem", "portfolio_user_id", guid.ToString());
-                }
-                UserIdService.UserId = guid;
-                await RefreshPortfolio();
+                PortfolioItems = await ApiService.GetPortfolioAsync(UserIdService.UserId);
+                Logger.LogInformation("Portfolio loaded: {Count} items", PortfolioItems.Count);
+                break;
             }
             catch (Exception ex)
             {
-                Logger.LogError(ex, "Error initializing user");
-                ShowError($"Initialization error: {ex.Message}");
-                UserIdService.UserId = Guid.NewGuid();
+                Logger.LogWarning(ex, "Retry {Attempt}/{MaxRetries} loading portfolio", i + 1, maxRetries);
+                if (i == maxRetries - 1)
+                {
+                    Logger.LogError(ex, "Error loading portfolio after {MaxRetries} retries", maxRetries);
+                    ShowError($"Error loading portfolio: {ex.Message}");
+                    PortfolioItems = [];
+                }
+                else
+                {
+                    await Task.Delay(delayMs);
+                }
             }
         }
+        IsLoading = false;
     }
 
     private async Task RefreshPortfolio()

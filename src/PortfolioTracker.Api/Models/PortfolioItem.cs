@@ -28,6 +28,8 @@ public class PortfolioItem
 
     public DateTime? PurchaseDate { get; set; }
 
+    public decimal Commission { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

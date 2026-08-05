@@ -27,6 +27,7 @@ var app = builder.Build();
 app.UseStaticFiles();
 app.UseExceptionHandler("/Error");
 app.UseHsts();
+app.UseAntiforgery();
 
 app.MapRazorComponents<PortfolioTracker.Blazor.Components.App>()
     .AddInteractiveServerRenderMode();

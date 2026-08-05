@@ -71,6 +71,14 @@
                         <input type="date" class="form-control" @bind="PurchaseDate" />
                     </div>
 
+                    <div class="mb-3">
+                        <label class="form-label">Commission (€)</label>
+                        <div class="input-group">
+                            <span class="input-group-text">€</span>
+                            <input type="number" class="form-control" @bind="Commission" step="0.01" min="0" />
+                        </div>
+                    </div>
+
                     @if (HasError)
                     {
                         <div class="alert alert-danger">@ErrorMessage</div>
@@ -119,6 +127,7 @@
     private decimal Shares { get; set; }
     private decimal PurchasePrice { get; set; }
     private DateTime? PurchaseDate { get; set; }
+    private decimal Commission { get; set; }
     private bool IsSaving { get; set; }
     private bool HasError { get; set; }
     private string ErrorMessage { get; set; } = "";
@@ -186,7 +195,8 @@
                 Type = SelectedSymbol.Type,
                 Shares = Shares,
                 PurchasePrice = PurchasePrice,
-                PurchaseDate = PurchaseDate
+                PurchaseDate = PurchaseDate,
+                Commission = Commission
             };
 
             var result = await ApiService.AddItemAsync(request);
@@ -198,7 +208,7 @@
             else
             {
                 HasError = true;
-                ErrorMessage = "Failed to add investment. It may already exist in your portfolio.";
+                ErrorMessage = "Failed to add investment.";
             }
         }
         catch (Exception ex)
@@ -222,6 +232,7 @@
         Shares = 0;
         PurchasePrice = 0;
         PurchaseDate = null;
+        Commission = 0;
         IsSaving = false;
         HasError = false;
         ErrorMessage = "";

@@ -20,6 +20,7 @@ public class PortfolioDbContext : DbContext
             entity.HasIndex(e => new { e.UserId, e.Symbol }).IsUnique();
             entity.Property(e => e.Shares).HasPrecision(18, 8);
             entity.Property(e => e.PurchasePrice).HasPrecision(18, 4);
+            entity.Property(e => e.Commission).HasPrecision(18, 2);
         });
     }
 }

@@ -66,12 +66,43 @@ public class YahooFinanceService
     {
         try
         {
-            var quoteInfo = await GetQuoteInfoAsync(symbol);
-            return quoteInfo.Price;
+            var url = $"https://query1.finance.yahoo.com/v7/finance/quote?symbols={Uri.EscapeDataString(symbol)}";
+
+            _httpClient.DefaultRequestHeaders.Clear();
+            _httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+
+            var response = await _httpClient.GetAsync(url);
+            if (!response.IsSuccessStatusCode)
+            {
+                var quoteInfo = await GetQuoteInfoAsync(symbol);
+                return quoteInfo.Price;
+            }
+
+            var json = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+
+            var quoteResponse = doc.RootElement.GetProperty("quoteResponse");
+            var results = quoteResponse.GetProperty("result");
+            if (results.GetArrayLength() == 0)
+                return null;
+
+            var quote = results[0];
+
+            if (quote.TryGetProperty("postMarketPrice", out var postMp) && postMp.ValueKind == JsonValueKind.Number && postMp.GetDecimal() > 0)
+                return postMp.GetDecimal();
+
+            if (quote.TryGetProperty("preMarketPrice", out var preMp) && preMp.ValueKind == JsonValueKind.Number && preMp.GetDecimal() > 0)
+                return preMp.GetDecimal();
+
+            if (quote.TryGetProperty("regularMarketPrice", out var rmp) && rmp.ValueKind == JsonValueKind.Number)
+                return rmp.GetDecimal();
+
+            return null;
         }
         catch
         {
-            return null;
+            var quoteInfo = await GetQuoteInfoAsync(symbol);
+            return quoteInfo.Price;
         }
     }
 
@@ -100,7 +131,11 @@ public class YahooFinanceService
             if (!firstResult.TryGetProperty("meta", out var meta))
                 return (null, null, null);
 
-            var price = meta.TryGetProperty("regularMarketPrice", out var mp) ? mp.GetDecimal() : (decimal?)null;
+            var price = meta.TryGetProperty("postMarketPrice", out var postMp) && postMp.ValueKind == JsonValueKind.Number
+                ? postMp.GetDecimal()
+                : meta.TryGetProperty("preMarketPrice", out var preMp) && preMp.ValueKind == JsonValueKind.Number
+                    ? preMp.GetDecimal()
+                    : (meta.TryGetProperty("regularMarketPrice", out var mp) ? mp.GetDecimal() : (decimal?)null);
             var symbolName = meta.TryGetProperty("shortName", out var sn) ? sn.GetString() : null;
             var quoteType = meta.TryGetProperty("instrumentType", out var it) ? it.GetString() : null;
 
