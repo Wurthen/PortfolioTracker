@@ -9,6 +9,9 @@ services:
       - postgres
     environment:
       - ConnectionStrings__Default=Host=postgres;Database=portfolio;Username=postgres;Password=postgres
+      - TwelveDataApiKey=b3e8bc7134ad402ab64b7bc6585c4023
+      - FmpApiKey=nOC6v8vCcvbsTKb1lk4Dz8Vak0lP3XrS
+      - EodApiKey=6a7906fedfbc20.46232573
     networks:
       - portfolio-network
 

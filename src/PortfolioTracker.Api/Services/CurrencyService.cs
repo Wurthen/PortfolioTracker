@@ -20,6 +20,18 @@ public class CurrencyService
 
     public async Task<decimal> GetUsdToEurRateAsync()
     {
+        var rate = await FetchRateAsync();
+        return rate;
+    }
+
+    public async Task<decimal> GetEurToUsdRateAsync()
+    {
+        var rate = await FetchRateAsync();
+        return rate > 0 ? 1 / rate : 1.09m;
+    }
+
+    private async Task<decimal> FetchRateAsync()
+    {
         if (_cache.TryGetValue(CacheKey, out decimal cachedRate))
         {
             return cachedRate;

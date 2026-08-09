@@ -38,6 +38,24 @@
                     </div>
                 </div>
 
+                @if (IsFund)
+                {
+                    <div class="alert alert-light border">
+                        <h6 class="mb-2">Fund Symbol Mapping</h6>
+                        <div class="mb-2">
+                            <label class="form-label">Alternative Symbol (optional)</label>
+                            <input type="text" class="form-control" @bind="AlternativeSymbol" placeholder="e.g. LU0840158819.EUFUND" />
+                            <small class="text-muted">Some funds are listed under a different symbol on data providers like EOD.</small>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" @bind="UseAlternativeSymbol" id="useAltSymbol" />
+                            <label class="form-check-label" for="useAltSymbol">
+                                Use alternative symbol for price lookup
+                            </label>
+                        </div>
+                    </div>
+                }
+
                 @if (HasError)
                 {
                     <div class="alert alert-danger">@ErrorMessage</div>
@@ -80,9 +98,13 @@
     private decimal PurchasePrice { get; set; }
     private DateTime? PurchaseDate { get; set; }
     private decimal Commission { get; set; }
+    private string? AlternativeSymbol { get; set; }
+    private bool UseAlternativeSymbol { get; set; }
     private bool IsSaving { get; set; }
     private bool HasError { get; set; }
     private string ErrorMessage { get; set; } = "";
+
+    private bool IsFund => Item?.Type.Equals("Fund", StringComparison.OrdinalIgnoreCase) == true;
 
     protected override void OnParametersSet()
     {
@@ -92,6 +114,8 @@
             PurchasePrice = Item.PurchasePrice;
             PurchaseDate = Item.PurchaseDate;
             Commission = Item.Commission;
+            AlternativeSymbol = Item.AlternativeSymbol;
+            UseAlternativeSymbol = Item.UseAlternativeSymbol;
         }
     }
 
@@ -114,7 +138,9 @@
                 Shares = Shares,
                 PurchasePrice = PurchasePrice,
                 PurchaseDate = PurchaseDate,
-                Commission = Commission
+                Commission = Commission,
+                AlternativeSymbol = AlternativeSymbol,
+                UseAlternativeSymbol = UseAlternativeSymbol
             };
 
             var result = await ApiService.UpdateItemAsync(Item.Id, UserId, request);
@@ -146,6 +172,8 @@
         PurchasePrice = 0;
         PurchaseDate = null;
         Commission = 0;
+        AlternativeSymbol = null;
+        UseAlternativeSymbol = false;
         IsSaving = false;
         HasError = false;
         ErrorMessage = "";

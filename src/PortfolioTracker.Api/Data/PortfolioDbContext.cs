@@ -10,6 +10,7 @@ public class PortfolioDbContext : DbContext
     }
 
     public DbSet<PortfolioItem> PortfolioItems { get; set; } = null!;
+    public DbSet<SymbolPrice> SymbolPrices { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -21,6 +22,13 @@ public class PortfolioDbContext : DbContext
             entity.Property(e => e.Shares).HasPrecision(18, 8);
             entity.Property(e => e.PurchasePrice).HasPrecision(18, 4);
             entity.Property(e => e.Commission).HasPrecision(18, 2);
+            entity.Property(e => e.AlternativeSymbol).HasMaxLength(50);
+        });
+
+        modelBuilder.Entity<SymbolPrice>(entity =>
+        {
+            entity.HasKey(e => e.Symbol);
+            entity.Property(e => e.Price).HasPrecision(18, 4);
         });
     }
 }

@@ -1,0 +1,62 @@
+@inject IJSRuntime JS
+
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">Portfolio Allocation</h5>
+    </div>
+    <div class="card-body">
+        @if (Items.Any())
+        {
+            <canvas id="allocationChart" width="400" height="400"></canvas>
+        }
+        else
+        {
+            <p class="text-muted text-center">No investments yet</p>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public List<PortfolioItemDto> Items { get; set; } = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Items.Any())
+        {
+            await UpdateChart();
+        }
+    }
+
+    private async Task UpdateChart()
+    {
+        var totalValue = Items.Sum(i => i.CurrentValue);
+        if (totalValue == 0) return;
+
+        var labels = Items.Select(i => i.Symbol).ToArray();
+        var data = Items.Select(i => (double)((i.CurrentValue / totalValue) * 100)).ToArray();
+        var colors = GenerateColors(Items.Count);
+
+        await JS.InvokeVoidAsync("updateAllocationChart", labels, data, colors);
+    }
+
+    private static string[] GenerateColors(int count)
+    {
+        var colors = new[]
+        {
+            "#0d6efd", "#198754", "#ffc107", "#dc3545", "#6f42c1",
+            "#20c997", "#fd7e14", "#0dcaf0", "#6610f2", "#d63384",
+            "#6c757d", "#adb5bd", "#343a40", "#495057", "#212529"
+        };
+
+        if (count <= colors.Length)
+            return colors.Take(count).ToArray();
+
+        var result = colors.ToList();
+        while (result.Count < count)
+        {
+            result.Add($"#{Random.Shared.Next(0x1000000):X6}");
+        }
+        return result.ToArray();
+    }
+}

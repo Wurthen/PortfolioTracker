@@ -50,4 +50,45 @@ public class PortfolioApiService
         var response = await Client.DeleteAsync($"/api/portfolio/{id}/{userId}");
         return response.IsSuccessStatusCode;
     }
+
+    public async Task<PortfolioPerformanceDto?> GetPerformanceAsync(Guid userId)
+    {
+        var response = await Client.GetAsync($"/api/portfolio/{userId}/performance");
+        if (!response.IsSuccessStatusCode)
+            return null;
+        return await response.Content.ReadFromJsonAsync<PortfolioPerformanceDto>();
+    }
+
+    public async Task<PortfolioDashboardDto?> GetDashboardAsync(Guid userId)
+    {
+        return await GetWithRetryAsync<PortfolioDashboardDto>($"/api/portfolio/{userId}/dashboard");
+    }
+
+    private async Task<T?> GetWithRetryAsync<T>(string url, int maxRetries = 10, int delayMs = 1000)
+    {
+        for (int i = 0; i < maxRetries; i++)
+        {
+            try
+            {
+                var response = await Client.GetAsync(url);
+                if (response.IsSuccessStatusCode)
+                    return await response.Content.ReadFromJsonAsync<T>();
+
+                if ((int)response.StatusCode >= 500)
+                {
+                    await Task.Delay(delayMs);
+                    continue;
+                }
+
+                return default;
+            }
+            catch (HttpRequestException)
+            {
+                if (i == maxRetries - 1) throw;
+                await Task.Delay(delayMs);
+            }
+        }
+
+        return default;
+    }
 }

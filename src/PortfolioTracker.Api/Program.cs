@@ -10,8 +10,17 @@ builder.Services.AddDbContext<PortfolioDbContext>(options =>
         ?? "Host=localhost;Database=portfolio;Username=postgres;Password=postgres"));
 
 builder.Services.AddHttpClient<YahooFinanceService>();
-builder.Services.AddHttpClient<CurrencyService>();
+builder.Services.AddHttpClient<TwelveDataPriceProvider>();
+builder.Services.AddHttpClient<FmpPriceProvider>();
+builder.Services.AddHttpClient<EodPriceProvider>();
+builder.Services.AddScoped<TwelveDataPriceProvider>();
+builder.Services.AddScoped<FmpPriceProvider>();
+builder.Services.AddScoped<EodPriceProvider>();
+builder.Services.AddScoped<SymbolPriceService>();
+builder.Services.AddScoped<CompositePriceProvider>();
+builder.Services.AddScoped<IPriceProvider>(sp => sp.GetRequiredService<CompositePriceProvider>());
 builder.Services.AddScoped<PortfolioService>();
+builder.Services.AddScoped<CurrencyService>();
 builder.Services.AddMemoryCache();
 
 builder.Services.AddCors(options =>
@@ -65,6 +74,18 @@ app.MapDelete("/api/portfolio/{id:guid}/{userId:guid}", async (Guid id, Guid use
 {
     var success = await portfolioService.DeleteItemAsync(id, userId);
     return success ? Results.NoContent() : Results.NotFound();
+});
+
+app.MapGet("/api/portfolio/{userId:guid}/performance", async (Guid userId, PortfolioService portfolioService) =>
+{
+    var performance = await portfolioService.GetPerformanceAsync(userId);
+    return Results.Ok(performance);
+});
+
+app.MapGet("/api/portfolio/{userId:guid}/dashboard", async (Guid userId, PortfolioService portfolioService) =>
+{
+    var dashboard = await portfolioService.GetDashboardAsync(userId);
+    return Results.Ok(dashboard);
 });
 
 app.MapGet("/health", () => Results.Ok());

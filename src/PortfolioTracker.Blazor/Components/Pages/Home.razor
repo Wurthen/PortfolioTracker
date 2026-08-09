@@ -36,26 +36,66 @@
     }
     else
     {
-        <div class="card mb-4">
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-3">
-                        <small class="text-muted">Total Value</small>
-                        <div class="h4 mb-0 text-success">@TotalValue.ToString("N2") €</div>
-                    </div>
-                    <div class="col-md-3">
-                        <small class="text-muted">Total Gain/Loss</small>
-                        <div class="h4 mb-0 @TotalGainLossClass">@TotalGainLoss.ToString("N2") €</div>
-                    </div>
-                    <div class="col-md-3">
-                        <small class="text-muted">Total Gain/Loss %</small>
-                        <div class="h4 mb-0 @TotalGainLossClass">@TotalGainLossPercent.ToString("F2")%</div>
-                    </div>
-                    <div class="col-md-3">
-                        <small class="text-muted">Investments</small>
-                        <div class="h4 mb-0">@PortfolioItems.Count</div>
+        <div class="row mb-4">
+            <div class="col-md-8">
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-3">
+                                <small class="text-muted">Total Value</small>
+                                <div class="h4 mb-0 text-success">@TotalValue.ToString("N2") €</div>
+                            </div>
+                            <div class="col-md-3">
+                                <small class="text-muted">Total Gain/Loss</small>
+                                <div class="h4 mb-0 @TotalGainLossClass">@TotalGainLoss.ToString("N2") €</div>
+                            </div>
+                            <div class="col-md-3">
+                                <small class="text-muted">Total Gain/Loss %</small>
+                                <div class="h4 mb-0 @TotalGainLossClass">@TotalGainLossPercent.ToString("F2")%</div>
+                            </div>
+                            <div class="col-md-3">
+                                <small class="text-muted">Investments</small>
+                                <div class="h4 mb-0">@PortfolioItems.Count</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
+
+                @if (Performance != null)
+                {
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="mb-0">Performance</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row text-center">
+                                <div class="col">
+                                    <small class="text-muted d-block">1 Day</small>
+                                    <span class="fw-bold @GetGainLossClass(Performance.Daily)">@Performance.Daily.ToString("F2")%</span>
+                                </div>
+                                <div class="col">
+                                    <small class="text-muted d-block">1 Week</small>
+                                    <span class="fw-bold @GetGainLossClass(Performance.Weekly)">@Performance.Weekly.ToString("F2")%</span>
+                                </div>
+                                <div class="col">
+                                    <small class="text-muted d-block">1 Month</small>
+                                    <span class="fw-bold @GetGainLossClass(Performance.Monthly)">@Performance.Monthly.ToString("F2")%</span>
+                                </div>
+                                <div class="col">
+                                    <small class="text-muted d-block">YTD</small>
+                                    <span class="fw-bold @GetGainLossClass(Performance.Ytd)">@Performance.Ytd.ToString("F2")%</span>
+                                </div>
+                                <div class="col">
+                                    <small class="text-muted d-block">1 Year</small>
+                                    <span class="fw-bold @GetGainLossClass(Performance.Yearly)">@Performance.Yearly.ToString("F2")%</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+            <div class="col-md-4">
+                <AllocationChart Items="PortfolioItems" />
             </div>
         </div>
 
@@ -79,7 +119,13 @@
                     @foreach (var item in PortfolioItems)
                     {
                         <tr>
-                            <td><strong>@item.Symbol</strong></td>
+                            <td>
+                                <strong>@item.Symbol</strong>
+                                @if (item.UseAlternativeSymbol)
+                                {
+                                    <span class="badge bg-info ms-1" title="Using alternative symbol @item.AlternativeSymbol">A</span>
+                                }
+                            </td>
                             <td>@item.Name</td>
                             <td class="text-end">@item.Shares.ToString("N4")</td>
                             <td class="text-end">@item.PurchasePrice.ToString("N4") €</td>
@@ -155,7 +201,8 @@
 
 @code {
     private List<PortfolioItemDto> PortfolioItems { get; set; } = [];
-    private bool IsLoading { get; set; } = false;
+    private PortfolioPerformanceDto? Performance { get; set; }
+    private bool IsLoading { get; set; } = true;
     private bool showAddDialog { get; set; } = false;
     private bool showEditDialog { get; set; } = false;
     private PortfolioItemDto? selectedItem;
@@ -171,50 +218,13 @@
 
     private string TotalGainLossClass => GetGainLossClass(TotalGainLoss);
 
-    protected override async Task OnInitializedAsync()
-    {
-        await RefreshPortfolioWithRetry();
-    }
-
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
             await RefreshPortfolio();
-            StateHasChanged();
+            await InvokeAsync(StateHasChanged);
         }
-    }
-
-    private async Task RefreshPortfolioWithRetry(int maxRetries = 5, int delayMs = 2000)
-    {
-        if (UserIdService.UserId == Guid.Empty)
-            return;
-
-        IsLoading = true;
-        for (int i = 0; i < maxRetries; i++)
-        {
-            try
-            {
-                PortfolioItems = await ApiService.GetPortfolioAsync(UserIdService.UserId);
-                Logger.LogInformation("Portfolio loaded: {Count} items", PortfolioItems.Count);
-                break;
-            }
-            catch (Exception ex)
-            {
-                Logger.LogWarning(ex, "Retry {Attempt}/{MaxRetries} loading portfolio", i + 1, maxRetries);
-                if (i == maxRetries - 1)
-                {
-                    Logger.LogError(ex, "Error loading portfolio after {MaxRetries} retries", maxRetries);
-                    ShowError($"Error loading portfolio: {ex.Message}");
-                    PortfolioItems = [];
-                }
-                else
-                {
-                    await Task.Delay(delayMs);
-                }
-            }
-        }
-        IsLoading = false;
     }
 
     private async Task RefreshPortfolio()
@@ -225,9 +235,19 @@
         IsLoading = true;
         try
         {
-            Logger.LogInformation("Fetching portfolio for user {UserId}", UserIdService.UserId);
-            PortfolioItems = await ApiService.GetPortfolioAsync(UserIdService.UserId);
-            Logger.LogInformation("Portfolio loaded: {Count} items", PortfolioItems.Count);
+            Logger.LogInformation("Fetching dashboard for user {UserId}", UserIdService.UserId);
+            var dashboard = await ApiService.GetDashboardAsync(UserIdService.UserId);
+            if (dashboard != null)
+            {
+                PortfolioItems = dashboard.Items;
+                Performance = dashboard.Performance;
+                Logger.LogInformation("Dashboard loaded: {Count} items", PortfolioItems.Count);
+            }
+            else
+            {
+                PortfolioItems = [];
+                Performance = null;
+            }
         }
         catch (Exception ex)
         {

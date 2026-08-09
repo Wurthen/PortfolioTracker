@@ -30,6 +30,11 @@ public class PortfolioItem
 
     public decimal Commission { get; set; }
 
+    [MaxLength(50)]
+    public string? AlternativeSymbol { get; set; }
+
+    public bool UseAlternativeSymbol { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
