@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
@@ -99,7 +100,8 @@ public class TwelveDataPriceProvider : IPriceProvider
 
     private static decimal? ParsePriceValue(JsonElement element)
     {
-        if (element.ValueKind == JsonValueKind.String && decimal.TryParse(element.GetString(), out var stringPrice))
+        if (element.ValueKind == JsonValueKind.String &&
+            decimal.TryParse(element.GetString(), NumberStyles.Number, CultureInfo.InvariantCulture, out var stringPrice))
             return stringPrice;
         if (element.ValueKind == JsonValueKind.Number)
             return element.GetDecimal();

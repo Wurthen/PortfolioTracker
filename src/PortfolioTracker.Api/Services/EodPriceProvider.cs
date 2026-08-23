@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
@@ -163,7 +164,7 @@ public class EodPriceProvider : IPriceProvider
         {
             rawPrice = closeElement.GetDecimal();
         }
-        else if (closeElement.ValueKind == JsonValueKind.String && decimal.TryParse(closeElement.GetString(), out var stringPrice))
+        else if (closeElement.ValueKind == JsonValueKind.String && decimal.TryParse(closeElement.GetString(), NumberStyles.Number, CultureInfo.InvariantCulture, out var stringPrice))
         {
             rawPrice = stringPrice;
         }

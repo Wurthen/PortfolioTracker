@@ -16,10 +16,6 @@
         </button>
     </div>
 
-    <p>UserId: @UserIdService.UserId</p>
-    <p>IsLoading: @IsLoading</p>
-    <p>showAddDialog: @showAddDialog</p>
-
     @if (IsLoading)
     {
         <div class="text-center py-5">
@@ -96,6 +92,34 @@
             </div>
             <div class="col-md-4">
                 <AllocationChart Items="PortfolioItems" />
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Evoluci&oacute;n del valor</h5>
+                <div class="btn-group btn-group-sm" role="group">
+                    @foreach (var period in Periods)
+                    {
+                        <button type="button" class="btn @(SelectedPeriod == period.Key ? "btn-primary" : "btn-outline-secondary")"
+                                @onclick="() => SelectPeriod(period.Key)">
+                            @period.Label
+                        </button>
+                    }
+                </div>
+            </div>
+            <div class="card-body">
+                @if (History != null)
+                {
+                    <div class="d-flex justify-content-between align-items-baseline mb-2">
+                        <span class="text-muted small">@PeriodRangeText</span>
+                        <span class="h5 mb-0 @GetGainLossClass(PeriodChangePercent)">
+                            @PeriodChangePercent.ToString("F2")%
+                            <small class="text-muted">en el periodo</small>
+                        </span>
+                    </div>
+                    <PortfolioChart Points="FilteredTotalPoints" />
+                }
             </div>
         </div>
 
@@ -211,6 +235,8 @@
 @code {
     private List<PortfolioItemDto> PortfolioItems { get; set; } = [];
     private PortfolioPerformanceDto? Performance { get; set; }
+    private PortfolioHistoryResponseDto? History { get; set; }
+    private string SelectedPeriod { get; set; } = "1m";
     private bool IsLoading { get; set; } = true;
     private bool showAddDialog { get; set; } = false;
     private bool showEditDialog { get; set; } = false;
@@ -220,6 +246,57 @@
     private bool isDeleting;
     private bool hasError = false;
     private string errorMessage = "";
+
+    private static readonly (string Key, string Label)[] Periods =
+    [
+        ("1d", "1D"), ("7d", "1S"), ("1m", "1M"), ("3m", "3M"), ("6m", "6M"), ("ytd", "YTD"), ("1y", "1A")
+    ];
+
+    private List<HistoryPointDto> FilteredTotalPoints
+    {
+        get
+        {
+            if (History == null)
+                return [];
+            var cutoff = SelectedPeriod switch
+            {
+                "1d" => DateTime.UtcNow.Date,
+                "7d" => DateTime.UtcNow.Date.AddDays(-7),
+                "1m" => DateTime.UtcNow.Date.AddDays(-30),
+                "3m" => DateTime.UtcNow.Date.AddDays(-90),
+                "6m" => DateTime.UtcNow.Date.AddDays(-180),
+                "ytd" => new DateTime(DateTime.UtcNow.Year, 1, 1),
+                "1y" => DateTime.UtcNow.Date.AddDays(-365),
+                _ => DateTime.MinValue
+            };
+            return History.Total.Where(p => p.Date >= cutoff).ToList();
+        }
+    }
+
+    private decimal PeriodChangePercent
+    {
+        get
+        {
+            var pts = FilteredTotalPoints;
+            if (pts.Count == 0 || pts[0].Value == 0)
+                return 0;
+            return (pts[^1].Value - pts[0].Value) / pts[0].Value * 100;
+        }
+    }
+
+    private string PeriodRangeText
+    {
+        get
+        {
+            var pts = FilteredTotalPoints;
+            if (pts.Count == 0)
+                return "Sin datos";
+            var label = Periods.First(p => p.Key == SelectedPeriod).Label;
+            return $"{pts.Count} valor(es) diarios - periodo {label}";
+        }
+    }
+
+    private void SelectPeriod(string key) => SelectedPeriod = key;
 
     private decimal TotalValue => PortfolioItems.Sum(p => p.CurrentValue);
     private decimal TotalGainLoss => PortfolioItems.Sum(p => p.GainLoss);
@@ -251,6 +328,8 @@
                 PortfolioItems = dashboard.Items;
                 Performance = dashboard.Performance;
                 Logger.LogInformation("Dashboard loaded: {Count} items", PortfolioItems.Count);
+
+                History = await ApiService.GetHistoryAsync(UserIdService.UserId);
             }
             else
             {

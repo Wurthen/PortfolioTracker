@@ -64,6 +64,14 @@ public class PortfolioApiService
         return await GetWithRetryAsync<PortfolioDashboardDto>($"/api/portfolio/{userId}/dashboard");
     }
 
+    public async Task<PortfolioHistoryResponseDto?> GetHistoryAsync(Guid userId)
+    {
+        var response = await Client.GetAsync($"/api/portfolio/{userId}/history");
+        if (!response.IsSuccessStatusCode)
+            return null;
+        return await response.Content.ReadFromJsonAsync<PortfolioHistoryResponseDto>();
+    }
+
     private static async Task ThrowApiErrorAsync(HttpResponseMessage response)
     {
         var message = $"Request failed ({(int)response.StatusCode}).";

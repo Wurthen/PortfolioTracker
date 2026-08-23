@@ -116,6 +116,12 @@ app.MapGet("/api/portfolio/{userId:guid}/dashboard", async (Guid userId, Portfol
     return Results.Ok(dashboard);
 });
 
+app.MapGet("/api/portfolio/{userId:guid}/history", async (Guid userId, PortfolioService portfolioService) =>
+{
+    var history = await portfolioService.GetHistoryAsync(userId);
+    return Results.Ok(history);
+});
+
 app.MapGet("/health", () => Results.Ok());
 
 app.Run();

@@ -70,7 +70,8 @@ src/
 
 | Endpoint | Purpose |
 |----------|---------|
-| `GET /api/portfolio/{userId}/dashboard` | Returns items + performance in **one call** (preferred over separate `/portfolio` + `/performance`) |
+| `GET /api/portfolio/{userId}/dashboard` | Returns items + performance in **one call** (preferred over separate `/portfolio` + `/performance`). Items sorted by `CurrentValue` desc. Writes the daily snapshot |
+| `GET /api/portfolio/{userId}/history` | Daily value series: `total[]` + per-item map (for charts) |
 | `GET /api/search?query=` | Search symbols via Yahoo Finance |
 | `POST /api/portfolio` | Add investment (merges if symbol exists for user) |
 | `PUT /api/portfolio/{id}/{userId}` | Update investment |
@@ -139,6 +140,16 @@ curl "http://localhost:8080/api/search?query=AAPL"
 ## Database
 
 - PostgreSQL 16 in Docker
-- EF Core migrations applied on startup via `db.Database.Migrate()`
-- Key tables: `PortfolioItems`, `SymbolPrices`
-- `SymbolPrices` caches last successful price per symbol across providers
+- EF Core migrations applied on startup via `db.Database.Migrate()`; generate with `dotnet ef migrations add <Name>` from `src/PortfolioTracker.Api`
+- Key tables: `PortfolioItems`, `SymbolPrices`, `PortfolioHistoryPoints`
+- `SymbolPrices` caches last successful price per symbol across providers; rows with `Provider='Manual'` are hand-seeded fallbacks (e.g. `0P0001NCW3` Ábaco) and persist because no live provider ever overwrites them
+- `PortfolioHistoryPoints`: one row per UTC day per item (+ `ItemId=Guid.Empty` = portfolio total), written on the FIRST dashboard load of each day only (unique index `(UserId, ItemId, Date)`)
+
+## Culture Gotcha (IMPORTANT)
+
+The dev machine runs es-ES culture but the API container runs invariant. NEVER call `decimal.TryParse(str)` without `CultureInfo.InvariantCulture` — `"119.34000"` parses as 11,934,000 under es-ES (dot = group separator). Providers returning string prices (TwelveData/EOD) must always use `NumberStyles.Number + InvariantCulture`. `JsonElement.GetDecimal()` is safe.
+
+## Charting
+
+- `Components/PortfolioChart.razor`: dependency-free SVG area chart fed with `List<HistoryPointDto>`; Home.razor filters points client-side by period (1D/1S/1M/3M/6M/YTD/1A)
+- Data accumulates one point/day — charts need days of usage before showing trends

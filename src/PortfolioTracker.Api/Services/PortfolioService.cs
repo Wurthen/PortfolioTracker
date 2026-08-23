@@ -243,8 +243,86 @@ public class PortfolioService
             currentValue += item.Shares * (currentPriceUsd ?? 0) * usdToEur;
         }
 
+        result.Items = result.Items.OrderByDescending(i => i.CurrentValue).ToList();
+
         result.Performance = new PortfolioPerformanceDto();
 
+        await SaveDailySnapshotAsync(userId, result.Items);
+
         return result;
+    }
+
+    // One snapshot per UTC day: first dashboard load of the day records each
+    // priced position plus the portfolio total. Later loads the same day are no-ops.
+    private async Task SaveDailySnapshotAsync(Guid userId, List<PortfolioItemDto> items)
+    {
+        try
+        {
+            var today = DateTime.UtcNow.Date;
+
+            var alreadySnapshotted = await _context.PortfolioHistoryPoints
+                .AnyAsync(p => p.UserId == userId && p.Date == today);
+
+            if (alreadySnapshotted)
+                return;
+
+            var pricedItems = items.Where(i => i.PriceAvailable).ToList();
+            if (pricedItems.Count == 0)
+                return;
+
+            var points = new List<PortfolioHistoryPoint>
+            {
+                new()
+                {
+                    UserId = userId,
+                    ItemId = Guid.Empty,
+                    Date = today,
+                    ValueEur = pricedItems.Sum(i => i.CurrentValue)
+                }
+            };
+            points.AddRange(pricedItems.Select(i => new PortfolioHistoryPoint
+            {
+                UserId = userId,
+                ItemId = i.Id,
+                Date = today,
+                ValueEur = i.CurrentValue
+            }));
+
+            _context.PortfolioHistoryPoints.AddRange(points);
+            await _context.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            // Snapshotting must never break the dashboard.
+            _logger.LogError(ex, "Failed to save daily portfolio snapshot for user {UserId}", userId);
+        }
+    }
+
+    public async Task<PortfolioHistoryResponseDto> GetHistoryAsync(Guid userId)
+    {
+        var points = await _context.PortfolioHistoryPoints
+            .AsNoTracking()
+            .Where(p => p.UserId == userId)
+            .OrderBy(p => p.Date)
+            .ToListAsync();
+
+        var response = new PortfolioHistoryResponseDto();
+
+        foreach (var point in points)
+        {
+            var dto = new HistoryPointDto { Date = point.Date, Value = point.ValueEur };
+
+            if (point.ItemId == Guid.Empty)
+                response.Total.Add(dto);
+            else
+            {
+                var key = point.ItemId.ToString();
+                if (!response.Items.TryGetValue(key, out var list))
+                    response.Items[key] = list = [];
+                list.Add(dto);
+            }
+        }
+
+        return response;
     }
 }

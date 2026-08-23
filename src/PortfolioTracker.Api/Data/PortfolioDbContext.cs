@@ -11,6 +11,7 @@ public class PortfolioDbContext : DbContext
 
     public DbSet<PortfolioItem> PortfolioItems { get; set; } = null!;
     public DbSet<SymbolPrice> SymbolPrices { get; set; } = null!;
+    public DbSet<PortfolioHistoryPoint> PortfolioHistoryPoints { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -29,6 +30,13 @@ public class PortfolioDbContext : DbContext
         {
             entity.HasKey(e => e.Symbol);
             entity.Property(e => e.Price).HasPrecision(18, 4);
+        });
+
+        modelBuilder.Entity<PortfolioHistoryPoint>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.UserId, e.ItemId, e.Date }).IsUnique();
+            entity.HasIndex(e => e.UserId);
         });
     }
 }

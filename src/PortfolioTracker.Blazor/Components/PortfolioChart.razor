@@ -1,0 +1,131 @@
+@using System.Text
+@using PortfolioTracker.Blazor.Services
+
+@if (PlotPoints.Count < 2)
+{
+    <div class="text-center text-muted py-5">
+        <span class="oi oi-graph"></span>
+        <p class="mt-2 mb-0">Todav&iacute;a no hay datos suficientes. Se guarda un valor por d&iacute;a cada vez que abres la app.</p>
+    </div>
+}
+else
+{
+    <svg viewBox="0 0 800 280" style="width:100%;height:auto;" role="img" aria-label="Evoluci&oacute;n del valor de la cartera">
+        <defs>
+            <linearGradient id="area-@(Uid)" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="@StrokeColor" stop-opacity="0.35" />
+                <stop offset="100%" stop-color="@StrokeColor" stop-opacity="0.02" />
+            </linearGradient>
+        </defs>
+
+        @foreach (var y in GridLinesY)
+        {
+            <line x1="@PadL" y1="@y.ToString(Invariant)" x2="@(W - PadR)" y2="@y.ToString(Invariant)"
+                  stroke="#e9ecef" stroke-width="1" />
+        }
+
+        <path d="@AreaPath" fill="url(#area-@(Uid))" />
+        <path d="@LinePath" fill="none" stroke="@StrokeColor" stroke-width="3"
+              stroke-linecap="round" stroke-linejoin="round" />
+
+        <circle cx="@LastX.ToString(Invariant)" cy="@LastY.ToString(Invariant)" r="6" fill="@StrokeColor" opacity="0.25" />
+        <circle cx="@LastX.ToString(Invariant)" cy="@LastY.ToString(Invariant)" r="3.5" fill="@StrokeColor" />
+
+        @if (PlotPoints.Count <= 62)
+        {
+            foreach (var p in PlotPoints)
+            {
+                <circle cx="@p.X.ToString(Invariant)" cy="@p.Y.ToString(Invariant)" r="7" fill="transparent">
+                    <title>@p.Date.ToString("dd/MM/yyyy"): @p.Value.ToString("N2") &euro;</title>
+                </circle>
+            }
+        }
+
+        <text x="@LastX.ToString(Invariant)" y="@((LastY - 14).ToString(Invariant))" text-anchor="middle"
+              font-size="15" font-weight="600" fill="@StrokeColor">@LastValue.ToString("N2") &euro;</text>
+
+        <text x="@PadL" y="@(H - 6)" font-size="12" fill="#6c757d">@FirstDate</text>
+        <text x="@(W - PadR)" y="@(H - 6)" text-anchor="end" font-size="12" fill="#6c757d">@LastDate</text>
+    </svg>
+}
+
+@code {
+    [Parameter]
+    public List<HistoryPointDto> Points { get; set; } = [];
+
+    private const int W = 800;
+    private const int H = 280;
+    private const int PadL = 10;
+    private const int PadR = 70;
+    private const int PadT = 30;
+    private const int PadB = 26;
+
+    private static readonly IFormatProvider Invariant = System.Globalization.CultureInfo.InvariantCulture;
+
+    private string Uid { get; } = Guid.NewGuid().ToString("N");
+
+    private List<(DateTime Date, decimal Value, double X, double Y)> PlotPoints { get; set; } = [];
+    private string LinePath { get; set; } = "";
+    private string AreaPath { get; set; } = "";
+    private double LastX { get; set; }
+    private double LastY { get; set; }
+    private decimal LastValue { get; set; }
+    private string FirstDate { get; set; } = "";
+    private string LastDate { get; set; } = "";
+    private string StrokeColor { get; set; } = "#198754";
+    private IEnumerable<double> GridLinesY { get; set; } = [];
+
+    protected override void OnParametersSet()
+    {
+        var data = Points
+            .OrderBy(p => p.Date)
+            .ToList();
+
+        if (data.Count < 2)
+        {
+            PlotPoints = [];
+            return;
+        }
+
+        var dMin = data[0].Date.Ticks;
+        var dMax = data[^1].Date.Ticks;
+        if (dMax == dMin) dMax = dMin + 1;
+
+        var vMin = data.Min(p => p.Value);
+        var vMax = data.Max(p => p.Value);
+        var vRange = vMax - vMin;
+        if (vRange == 0) { vMin -= 1; vMax += 1; }
+        else { vMin -= vRange * 0.08m; vMax += vRange * 0.08m; }
+
+        double X(DateTime d) => PadL + (double)(d.Ticks - dMin) / (dMax - dMin) * (W - PadL - PadR);
+        double Y(decimal v) => PadT + (double)(1 - (v - vMin) / (vMax - vMin)) * (H - PadT - PadB);
+
+        PlotPoints = data.Select(p => (p.Date, p.Value, X(p.Date), Y(p.Value))).ToList();
+
+        var sb = new StringBuilder();
+        sb.Append("M");
+        sb.Append(PlotPoints[0].X.ToString("0.##", Invariant));
+        sb.Append(' ');
+        sb.Append(PlotPoints[0].Y.ToString("0.##", Invariant));
+        foreach (var p in PlotPoints.Skip(1))
+        {
+            sb.Append(" L");
+            sb.Append(p.X.ToString("0.##", Invariant));
+            sb.Append(' ');
+            sb.Append(p.Y.ToString("0.##", Invariant));
+        }
+        LinePath = sb.ToString();
+
+        var last = PlotPoints[^1];
+        AreaPath = $"{LinePath} L{last.X.ToString("0.##", Invariant)} {(H - PadB).ToString(Invariant)} L{PlotPoints[0].X.ToString("0.##", Invariant)} {(H - PadB).ToString(Invariant)} Z";
+
+        LastX = last.X;
+        LastY = last.Y;
+        LastValue = last.Value;
+        FirstDate = data[0].Date.ToString("dd/MM/yy");
+        LastDate = data[^1].Date.ToString("dd/MM/yy");
+        StrokeColor = last.Value >= data[0].Value ? "#198754" : "#dc3545";
+
+        GridLinesY = Enumerable.Range(1, 3).Select(i => PadT + i * (H - PadT - PadB) / 4.0);
+    }
+}
