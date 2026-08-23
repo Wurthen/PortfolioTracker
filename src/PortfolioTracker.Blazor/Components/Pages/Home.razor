@@ -127,20 +127,20 @@
             <table class="table table-hover">
                 <thead class="table-light">
                     <tr>
-                        <th>Symbol</th>
-                        <th>Name</th>
-                        <th class="text-end">Shares</th>
-                        <th class="text-end">Purchase Price</th>
-                        <th class="text-end">Current Price (USD)</th>
-                        <th class="text-end">Current Price (EUR)</th>
-                        <th class="text-end">Current Value</th>
-                        <th class="text-end">Gain/Loss</th>
-                        <th class="text-end">Gain/Loss %</th>
+                        <th><span role="button" class="user-select-none" style="cursor:pointer" @onclick='() => ToggleSort("Symbol")'>Symbol @SortIcon("Symbol")</span></th>
+                        <th><span role="button" class="user-select-none" style="cursor:pointer" @onclick='() => ToggleSort("Name")'>Name @SortIcon("Name")</span></th>
+                        <th class="text-end"><span role="button" class="user-select-none" style="cursor:pointer" @onclick='() => ToggleSort("Shares")'>Shares @SortIcon("Shares")</span></th>
+                        <th class="text-end"><span role="button" class="user-select-none" style="cursor:pointer" @onclick='() => ToggleSort("PurchasePrice")'>Purchase Price @SortIcon("PurchasePrice")</span></th>
+                        <th class="text-end"><span role="button" class="user-select-none" style="cursor:pointer" @onclick='() => ToggleSort("CurrentPriceUsd")'>Current Price (USD) @SortIcon("CurrentPriceUsd")</span></th>
+                        <th class="text-end"><span role="button" class="user-select-none" style="cursor:pointer" @onclick='() => ToggleSort("CurrentPrice")'>Current Price (EUR) @SortIcon("CurrentPrice")</span></th>
+                        <th class="text-end"><span role="button" class="user-select-none" style="cursor:pointer" @onclick='() => ToggleSort("CurrentValue")'>Current Value @SortIcon("CurrentValue")</span></th>
+                        <th class="text-end"><span role="button" class="user-select-none" style="cursor:pointer" @onclick='() => ToggleSort("GainLoss")'>Gain/Loss @SortIcon("GainLoss")</span></th>
+                        <th class="text-end"><span role="button" class="user-select-none" style="cursor:pointer" @onclick='() => ToggleSort("GainLossPercent")'>Gain/Loss % @SortIcon("GainLossPercent")</span></th>
                         <th></th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var item in PortfolioItems)
+                    @foreach (var item in SortedItems)
                     {
                         <tr>
                             <td>
@@ -246,6 +246,58 @@
     private bool isDeleting;
     private bool hasError = false;
     private string errorMessage = "";
+
+    private string sortColumn { get; set; } = "CurrentValue";
+    private bool sortAsc { get; set; } = false;
+
+    private List<PortfolioItemDto> SortedItems
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(sortColumn) || PortfolioItems.Count == 0)
+                return PortfolioItems;
+
+            IOrderedEnumerable<PortfolioItemDto> ordered = sortColumn switch
+            {
+                "Symbol" => Sort(i => i.Symbol),
+                "Name" => Sort(i => i.Name),
+                "Shares" => Sort(i => i.Shares),
+                "PurchasePrice" => Sort(i => i.PurchasePrice),
+                "CurrentPriceUsd" => SortPriced(i => i.CurrentPriceUsd),
+                "CurrentPrice" => SortPriced(i => i.CurrentPrice),
+                "CurrentValue" => SortPriced(i => i.CurrentValue),
+                "GainLoss" => SortPriced(i => i.GainLoss),
+                "GainLossPercent" => SortPriced(i => i.GainLossPercent),
+                _ => PortfolioItems.OrderBy(_ => 0)
+            };
+
+            return ordered.ToList();
+        }
+    }
+
+    // Items without a live price always sink to the bottom, regardless of direction.
+    private IOrderedEnumerable<PortfolioItemDto> SortPriced(Func<PortfolioItemDto, decimal> key)
+    {
+        var ordered = PortfolioItems.OrderBy(i => i.PriceAvailable ? 0 : 1);
+        return sortAsc ? ordered.ThenBy(key) : ordered.ThenByDescending(key);
+    }
+
+    private IOrderedEnumerable<PortfolioItemDto> Sort<T>(Func<PortfolioItemDto, T> key)
+        => sortAsc ? PortfolioItems.OrderBy(key) : PortfolioItems.OrderByDescending(key);
+
+    private void ToggleSort(string column)
+    {
+        if (sortColumn == column)
+        {
+            sortAsc = !sortAsc;
+            return;
+        }
+        sortColumn = column;
+        sortAsc = column is "Symbol" or "Name";
+    }
+
+    private MarkupString SortIcon(string column)
+        => sortColumn != column ? new MarkupString("") : new MarkupString($"<i class=\"oi oi-caret-{(sortAsc ? "top" : "bottom")}\" style=\"font-size:10px\"></i>");
 
     private static readonly (string Key, string Label)[] Periods =
     [

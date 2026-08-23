@@ -33,12 +33,16 @@
         var totalValue = Items.Sum(i => i.CurrentValue);
         if (totalValue == 0) return;
 
-        var labels = Items.Select(i => i.Symbol).ToArray();
+        var labels = Items.Select(i => TruncateName(i.Name, 30)).ToArray();
+        var fullNames = Items.Select(i => i.Name).ToArray();
         var data = Items.Select(i => (double)((i.CurrentValue / totalValue) * 100)).ToArray();
         var colors = GenerateColors(Items.Count);
 
-        await JS.InvokeVoidAsync("updateAllocationChart", labels, data, colors);
+        await JS.InvokeVoidAsync("updateAllocationChart", labels, data, colors, fullNames);
     }
+
+    private static string TruncateName(string name, int maxLength)
+        => string.IsNullOrEmpty(name) || name.Length <= maxLength ? name : name[..(maxLength - 1)] + "…";
 
     private static string[] GenerateColors(int count)
     {
