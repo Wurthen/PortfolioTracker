@@ -58,14 +58,42 @@ app.MapGet("/api/portfolio/{userId:guid}", async (Guid userId, PortfolioService 
     return Results.Ok(items);
 });
 
+static IResult? ValidateSharesPurchaseAndCommission(decimal shares, decimal purchasePrice, decimal commission, string? name)
+{
+    if (shares <= 0)
+        return Results.BadRequest(new { error = "Shares must be greater than zero." });
+    if (purchasePrice <= 0)
+        return Results.BadRequest(new { error = "Purchase price must be greater than zero." });
+    if (commission < 0)
+        return Results.BadRequest(new { error = "Commission cannot be negative." });
+    if (!string.IsNullOrEmpty(name) && name.Length > 200)
+        return Results.BadRequest(new { error = "Name cannot exceed 200 characters." });
+    return null;
+}
+
 app.MapPost("/api/portfolio", async (CreatePortfolioItemRequest request, PortfolioService portfolioService) =>
 {
+    if (string.IsNullOrWhiteSpace(request.Symbol))
+        return Results.BadRequest(new { error = "Symbol is required." });
+    if (request.Symbol.Length > 20)
+        return Results.BadRequest(new { error = "Symbol cannot exceed 20 characters." });
+    if (string.IsNullOrWhiteSpace(request.Name))
+        return Results.BadRequest(new { error = "Name is required." });
+
+    var validationResult = ValidateSharesPurchaseAndCommission(request.Shares, request.PurchasePrice, request.Commission, request.Name);
+    if (validationResult != null)
+        return validationResult;
+
     var item = await portfolioService.AddItemAsync(request);
     return item == null ? Results.Conflict() : Results.Created($"/api/portfolio/{item.Id}", item);
 });
 
 app.MapPut("/api/portfolio/{id:guid}/{userId:guid}", async (Guid id, Guid userId, UpdatePortfolioItemRequest request, PortfolioService portfolioService) =>
 {
+    var validationResult = ValidateSharesPurchaseAndCommission(request.Shares, request.PurchasePrice, request.Commission, request.Name);
+    if (validationResult != null)
+        return validationResult;
+
     var item = await portfolioService.UpdateItemAsync(id, userId, request);
     return item == null ? Results.NotFound() : Results.Ok(item);
 });

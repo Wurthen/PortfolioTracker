@@ -12,6 +12,7 @@ public class PortfolioItemDto
     public decimal Commission { get; set; }
     public string? AlternativeSymbol { get; set; }
     public bool UseAlternativeSymbol { get; set; }
+    public bool PriceAvailable { get; set; } = true;
     public decimal CurrentPriceUsd { get; set; }
     public decimal CurrentPrice { get; set; }
     public decimal CurrentValue { get; set; }
@@ -50,6 +51,7 @@ public class UpdatePortfolioItemRequest
     public decimal PurchasePrice { get; set; }
     public DateTime? PurchaseDate { get; set; }
     public decimal Commission { get; set; }
+    public string? Name { get; set; }
     public string? AlternativeSymbol { get; set; }
     public bool UseAlternativeSymbol { get; set; }
 }
@@ -67,4 +69,9 @@ public class PortfolioDashboardDto
 {
     public List<PortfolioItemDto> Items { get; set; } = [];
     public PortfolioPerformanceDto Performance { get; set; } = new();
+}
+
+public class ApiErrorResponse
+{
+    public string? Error { get; set; }
 }

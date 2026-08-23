@@ -129,11 +129,20 @@
                             <td>@item.Name</td>
                             <td class="text-end">@item.Shares.ToString("N4")</td>
                             <td class="text-end">@item.PurchasePrice.ToString("N4") €</td>
-                            <td class="text-end">$@item.CurrentPriceUsd.ToString("N4")</td>
-                            <td class="text-end">@item.CurrentPrice.ToString("N4") €</td>
-                            <td class="text-end">@item.CurrentValue.ToString("N2") €</td>
-                            <td class="text-end @GetGainLossClass(item.GainLoss)">@item.GainLoss.ToString("N2") €</td>
-                            <td class="text-end @GetGainLossClass(item.GainLossPercent)">@item.GainLossPercent.ToString("F2")%</td>
+                            @if (item.PriceAvailable)
+                            {
+                                <td class="text-end">$@item.CurrentPriceUsd.ToString("N4")</td>
+                                <td class="text-end">@item.CurrentPrice.ToString("N4") €</td>
+                                <td class="text-end">@item.CurrentValue.ToString("N2") €</td>
+                                <td class="text-end @GetGainLossClass(item.GainLoss)">@item.GainLoss.ToString("N2") €</td>
+                                <td class="text-end @GetGainLossClass(item.GainLossPercent)">@item.GainLossPercent.ToString("F2")%</td>
+                            }
+                            else
+                            {
+                                <td class="text-end text-muted" colspan="5" title="Price unavailable: no provider returned a price for this symbol.">
+                                    N/A <span class="badge bg-warning text-dark ms-1">no price</span>
+                                </td>
+                            }
                             <td class="text-end">
                                 <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => ShowEditDialog(item)">
                                     <span class="oi oi-pencil"></span>

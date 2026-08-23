@@ -30,7 +30,7 @@ public class PortfolioService
         return item.Symbol;
     }
 
-    private async Task<decimal> GetCurrentPriceUsdAsync(PortfolioItem item)
+    private async Task<decimal?> GetCurrentPriceUsdAsync(PortfolioItem item)
     {
         var symbol = GetPriceSymbol(item);
         _logger.LogInformation("Getting price for {Symbol} using symbol {PriceSymbol} (UseAlternative={UseAlternative})",
@@ -48,16 +48,17 @@ public class PortfolioService
             _logger.LogWarning("EOD failed for alternative symbol {Symbol}, falling back to composite", item.AlternativeSymbol);
         }
 
-        return await _yahooFinanceService.GetCurrentPriceAsync(symbol) ?? 0;
+        return await _yahooFinanceService.GetCurrentPriceAsync(symbol);
     }
 
-    private static PortfolioItemDto MapToDto(PortfolioItem item, decimal currentPriceUsd, decimal usdToEur)
+    private static PortfolioItemDto MapToDto(PortfolioItem item, decimal? currentPriceUsd, decimal usdToEur)
     {
-        var currentPriceEur = currentPriceUsd * usdToEur;
-        var currentValue = item.Shares * currentPriceEur;
+        var priceAvailable = currentPriceUsd.HasValue;
+        var currentPriceEur = (currentPriceUsd ?? 0) * usdToEur;
         var costBasis = (item.Shares * item.PurchasePrice) + item.Commission;
-        var gainLoss = currentValue - costBasis;
-        var gainLossPercent = costBasis > 0 ? (gainLoss / costBasis) * 100 : 0;
+        var currentValue = priceAvailable ? item.Shares * currentPriceEur : 0;
+        var gainLoss = priceAvailable ? currentValue - costBasis : 0;
+        var gainLossPercent = priceAvailable && costBasis > 0 ? (gainLoss / costBasis) * 100 : 0;
 
         return new PortfolioItemDto
         {
@@ -71,7 +72,8 @@ public class PortfolioService
             Commission = item.Commission,
             AlternativeSymbol = item.AlternativeSymbol,
             UseAlternativeSymbol = item.UseAlternativeSymbol,
-            CurrentPriceUsd = currentPriceUsd,
+            PriceAvailable = priceAvailable,
+            CurrentPriceUsd = currentPriceUsd ?? 0,
             CurrentPrice = currentPriceEur,
             CurrentValue = currentValue,
             GainLoss = gainLoss,
@@ -103,8 +105,9 @@ public class PortfolioService
 
     public async Task<PortfolioItemDto?> AddItemAsync(CreatePortfolioItemRequest request)
     {
+        var normalizedSymbol = request.Symbol.ToUpperInvariant();
         var existingItem = await _context.PortfolioItems
-            .FirstOrDefaultAsync(p => p.UserId == request.UserId && p.Symbol == request.Symbol);
+            .FirstOrDefaultAsync(p => p.UserId == request.UserId && p.Symbol == normalizedSymbol);
 
         PortfolioItem item;
 
@@ -130,7 +133,7 @@ public class PortfolioService
             item = new PortfolioItem
             {
                 UserId = request.UserId,
-                Symbol = request.Symbol.ToUpperInvariant(),
+                Symbol = normalizedSymbol,
                 Name = request.Name,
                 Type = request.Type,
                 Shares = request.Shares,
@@ -166,6 +169,8 @@ public class PortfolioService
             ? DateTime.SpecifyKind(request.PurchaseDate.Value, DateTimeKind.Utc)
             : null;
         item.Commission = request.Commission;
+        if (request.Name != null)
+            item.Name = request.Name;
         item.AlternativeSymbol = request.AlternativeSymbol;
         item.UseAlternativeSymbol = request.UseAlternativeSymbol;
         item.UpdatedAt = DateTime.UtcNow;
@@ -209,7 +214,7 @@ public class PortfolioService
         foreach (var item in items)
         {
             var currentPrice = await GetCurrentPriceUsdAsync(item);
-            currentValue += item.Shares * currentPrice * usdToEur;
+            currentValue += item.Shares * (currentPrice ?? 0) * usdToEur;
         }
 
         // Without reliable historical data providers, performance metrics default to 0.
@@ -235,7 +240,7 @@ public class PortfolioService
             var dto = MapToDto(item, currentPriceUsd, usdToEur);
             result.Items.Add(dto);
 
-            currentValue += item.Shares * currentPriceUsd * usdToEur;
+            currentValue += item.Shares * (currentPriceUsd ?? 0) * usdToEur;
         }
 
         result.Performance = new PortfolioPerformanceDto();

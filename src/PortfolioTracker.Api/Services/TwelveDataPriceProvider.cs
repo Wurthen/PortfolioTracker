@@ -49,21 +49,31 @@ public class TwelveDataPriceProvider : IPriceProvider
             var json = await response.Content.ReadAsStringAsync();
             using var doc = JsonDocument.Parse(json);
 
-            var priceProperty = isFund ? "close" : "close";
-            if (!doc.RootElement.TryGetProperty(priceProperty, out var close))
+            if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                doc.RootElement.TryGetProperty("status", out var statusProp) &&
+                statusProp.ValueKind == JsonValueKind.String &&
+                statusProp.GetString() == "error")
             {
-                _logger.LogWarning("TwelveData returned no close price for {Symbol}", symbol);
+                _logger.LogWarning("TwelveData returned error status for {Symbol}: {Json}", symbol, json.Length > 300 ? json[..300] + "..." : json);
                 return null;
             }
 
             decimal? price = null;
-            if (close.ValueKind == JsonValueKind.String && decimal.TryParse(close.GetString(), out var stringPrice))
+            if (isFund)
             {
-                price = stringPrice;
+                // /eod returns { meta, values: [ { datetime, close, ... }, ... ] } (most recent first)
+                if (doc.RootElement.TryGetProperty("values", out var values) &&
+                    values.ValueKind == JsonValueKind.Array &&
+                    values.GetArrayLength() > 0 &&
+                    values[0].ValueKind == JsonValueKind.Object &&
+                    values[0].TryGetProperty("close", out var fundClose))
+                {
+                    price = ParsePriceValue(fundClose);
+                }
             }
-            else if (close.ValueKind == JsonValueKind.Number)
+            else if (doc.RootElement.TryGetProperty("close", out var close))
             {
-                price = close.GetDecimal();
+                price = ParsePriceValue(close);
             }
 
             if (price.HasValue)
@@ -85,5 +95,14 @@ public class TwelveDataPriceProvider : IPriceProvider
             _logger.LogError(ex, "TwelveData error for {Symbol}", symbol);
             return null;
         }
+    }
+
+    private static decimal? ParsePriceValue(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.String && decimal.TryParse(element.GetString(), out var stringPrice))
+            return stringPrice;
+        if (element.ValueKind == JsonValueKind.Number)
+            return element.GetDecimal();
+        return null;
     }
 }

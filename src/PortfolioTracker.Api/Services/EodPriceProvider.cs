@@ -46,6 +46,21 @@ public class EodPriceProvider : IPriceProvider
                 price = await TryGetEodPriceAsync(symbol);
             }
 
+            if (!price.HasValue && symbol.EndsWith(".EUFUND", StringComparison.OrdinalIgnoreCase))
+            {
+                var symbolWithoutSuffix = symbol[..^7];
+                _logger.LogInformation("EOD trying without EUFUND suffix: {Symbol}", symbolWithoutSuffix);
+                price = await TryGetRealTimePriceAsync(symbolWithoutSuffix);
+                if (!price.HasValue)
+                {
+                    price = await TryGetEodPriceAsync(symbolWithoutSuffix);
+                }
+                if (price.HasValue)
+                {
+                    cacheKey = $"eod_price_{symbolWithoutSuffix}";
+                }
+            }
+
             if (price.HasValue)
             {
                 var cacheOptions = new MemoryCacheEntryOptions()
@@ -65,52 +80,76 @@ public class EodPriceProvider : IPriceProvider
     private async Task<decimal?> TryGetRealTimePriceAsync(string symbol)
     {
         var url = $"https://eodhistoricaldata.com/api/real-time/{Uri.EscapeDataString(symbol)}?api_token={_apiKey}&fmt=json";
-        _logger.LogInformation("EOD requesting real-time price for {Symbol}", symbol);
+        _logger.LogInformation("EOD REAL-TIME requesting for {Symbol}", symbol);
 
         var response = await _httpClient.GetAsync(url);
+        _logger.LogInformation("EOD REAL-TIME response status: {Status} for {Symbol}", response.StatusCode, symbol);
+
         if (!response.IsSuccessStatusCode)
         {
-            _logger.LogWarning("EOD real-time failed for {Symbol}: {Status}", symbol, response.StatusCode);
+            _logger.LogWarning("EOD REAL-TIME failed for {Symbol}: HTTP {Status}", symbol, (int)response.StatusCode);
             return null;
         }
 
         var json = await response.Content.ReadAsStringAsync();
+        _logger.LogInformation("EOD REAL-TIME raw response for {Symbol}: {Json}", symbol, json.Length > 500 ? json[..500] + "..." : json);
+
         using var doc = JsonDocument.Parse(json);
 
-        if (!doc.RootElement.TryGetProperty("close", out var closeElement))
+        if (doc.RootElement.TryGetProperty("close", out var closeElement) && closeElement.ValueKind == JsonValueKind.String)
         {
-            _logger.LogWarning("EOD real-time returned no close for {Symbol}", symbol);
+            var closeStr = closeElement.GetString();
+            if (closeStr == "NA" || string.IsNullOrEmpty(closeStr))
+            {
+                if (doc.RootElement.TryGetProperty("previousClose", out var prevCloseElement) && prevCloseElement.ValueKind == JsonValueKind.Number)
+                {
+                    _logger.LogInformation("EOD REAL-TIME close is NA, using previousClose: {PrevClose}", prevCloseElement.GetDecimal());
+                    return await ParsePrice(symbol, prevCloseElement);
+                }
+                _logger.LogWarning("EOD REAL-TIME close is NA and no previousClose for {Symbol}", symbol);
+                return null;
+            }
+        }
+
+        if (!doc.RootElement.TryGetProperty("close", out var closeElem))
+        {
+            _logger.LogWarning("EOD REAL-TIME returned no close field for {Symbol}", symbol);
             return null;
         }
 
-        return await ParsePrice(symbol, closeElement);
+        return await ParsePrice(symbol, closeElem);
     }
 
     private async Task<decimal?> TryGetEodPriceAsync(string symbol)
     {
-        var url = $"https://eodhistoricaldata.com/api/eod/{Uri.EscapeDataString(symbol)}?api_token={_apiKey}&fmt=json&limit=1";
-        _logger.LogInformation("EOD requesting EOD price for {Symbol}", symbol);
+        var url = $"https://eodhistoricaldata.com/api/eod/{Uri.EscapeDataString(symbol)}?api_token={_apiKey}&fmt=json&limit=5";
+        _logger.LogInformation("EOD EOD requesting for {Symbol}", symbol);
 
         var response = await _httpClient.GetAsync(url);
+        _logger.LogInformation("EOD EOD response status: {Status} for {Symbol}", response.StatusCode, symbol);
+
         if (!response.IsSuccessStatusCode)
         {
-            _logger.LogWarning("EOD EOD failed for {Symbol}: {Status}", symbol, response.StatusCode);
+            _logger.LogWarning("EOD EOD failed for {Symbol}: HTTP {Status}", symbol, (int)response.StatusCode);
             return null;
         }
 
         var json = await response.Content.ReadAsStringAsync();
+        _logger.LogInformation("EOD EOD raw response for {Symbol}: {Json}", symbol, json.Length > 500 ? json[..500] + "..." : json);
+
         using var doc = JsonDocument.Parse(json);
 
         if (doc.RootElement.ValueKind != JsonValueKind.Array || doc.RootElement.GetArrayLength() == 0)
         {
-            _logger.LogWarning("EOD EOD returned no data for {Symbol}", symbol);
+            _logger.LogWarning("EOD EOD returned empty array for {Symbol}", symbol);
             return null;
         }
 
-        var lastBar = doc.RootElement[0];
+        var bars = doc.RootElement;
+        var lastBar = bars[bars.GetArrayLength() - 1];
         if (!lastBar.TryGetProperty("close", out var closeElement))
         {
-            _logger.LogWarning("EOD EOD returned no close for {Symbol}", symbol);
+            _logger.LogWarning("EOD EOD returned no close field for {Symbol}", symbol);
             return null;
         }
 
@@ -152,6 +191,13 @@ public class EodPriceProvider : IPriceProvider
     {
         if (symbol.EndsWith(".EUFUND", StringComparison.OrdinalIgnoreCase))
             return "EUR";
+
+        if (symbol.Length >= 2)
+        {
+            var prefix = symbol[..2].ToUpperInvariant();
+            if (prefix is "ES" or "LU" or "FR" or "DE" or "IT" or "NL" or "BE" or "AT" or "FI" or "IE" or "PT" or "GR")
+                return "EUR";
+        }
 
         return "USD";
     }

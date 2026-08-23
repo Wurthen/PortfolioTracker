@@ -8,8 +8,15 @@
                 <button type="button" class="btn-close" @onclick="Close"></button>
             </div>
             <div class="modal-body">
-                <div class="alert alert-secondary">
-                    <strong>@Item?.Symbol</strong> - @Item?.Name
+                <div class="alert alert-secondary d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>@Item?.Symbol</strong>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Name</label>
+                    <input type="text" class="form-control" @bind="Name" maxlength="200" placeholder="e.g. Amundi Index MSCI World SRI" />
                 </div>
 
                 <div class="mb-3">
@@ -44,7 +51,7 @@
                         <h6 class="mb-2">Fund Symbol Mapping</h6>
                         <div class="mb-2">
                             <label class="form-label">Alternative Symbol (optional)</label>
-                            <input type="text" class="form-control" @bind="AlternativeSymbol" placeholder="e.g. LU0840158819.EUFUND" />
+                            <input type="text" class="form-control" @bind="AlternativeSymbol" maxlength="50" placeholder="e.g. LU0840158819.EUFUND" />
                             <small class="text-muted">Some funds are listed under a different symbol on data providers like EOD.</small>
                         </div>
                         <div class="form-check">
@@ -98,22 +105,26 @@
     private decimal PurchasePrice { get; set; }
     private DateTime? PurchaseDate { get; set; }
     private decimal Commission { get; set; }
+    private string Name { get; set; } = "";
     private string? AlternativeSymbol { get; set; }
     private bool UseAlternativeSymbol { get; set; }
     private bool IsSaving { get; set; }
     private bool HasError { get; set; }
     private string ErrorMessage { get; set; } = "";
 
+    private Guid? _lastItemId;
     private bool IsFund => Item?.Type.Equals("Fund", StringComparison.OrdinalIgnoreCase) == true;
 
     protected override void OnParametersSet()
     {
-        if (Item != null)
+        if (Item != null && Item.Id != _lastItemId)
         {
+            _lastItemId = Item.Id;
             Shares = Item.Shares;
             PurchasePrice = Item.PurchasePrice;
             PurchaseDate = Item.PurchaseDate;
             Commission = Item.Commission;
+            Name = Item.Name;
             AlternativeSymbol = Item.AlternativeSymbol;
             UseAlternativeSymbol = Item.UseAlternativeSymbol;
         }
@@ -128,6 +139,13 @@
             return;
         }
 
+        if (string.IsNullOrWhiteSpace(Name))
+        {
+            HasError = true;
+            ErrorMessage = "Name is required.";
+            return;
+        }
+
         IsSaving = true;
         HasError = false;
 
@@ -139,6 +157,7 @@
                 PurchasePrice = PurchasePrice,
                 PurchaseDate = PurchaseDate,
                 Commission = Commission,
+                Name = Name,
                 AlternativeSymbol = AlternativeSymbol,
                 UseAlternativeSymbol = UseAlternativeSymbol
             };
@@ -172,8 +191,10 @@
         PurchasePrice = 0;
         PurchaseDate = null;
         Commission = 0;
+        Name = "";
         AlternativeSymbol = null;
         UseAlternativeSymbol = false;
+        _lastItemId = null;
         IsSaving = false;
         HasError = false;
         ErrorMessage = "";

@@ -33,7 +33,7 @@ public class PortfolioApiService
     {
         var response = await Client.PostAsJsonAsync("/api/portfolio", request);
         if (!response.IsSuccessStatusCode)
-            return null;
+            await ThrowApiErrorAsync(response);
         return await response.Content.ReadFromJsonAsync<PortfolioItemDto>();
     }
 
@@ -41,7 +41,7 @@ public class PortfolioApiService
     {
         var response = await Client.PutAsJsonAsync($"/api/portfolio/{id}/{userId}", request);
         if (!response.IsSuccessStatusCode)
-            return null;
+            await ThrowApiErrorAsync(response);
         return await response.Content.ReadFromJsonAsync<PortfolioItemDto>();
     }
 
@@ -62,6 +62,19 @@ public class PortfolioApiService
     public async Task<PortfolioDashboardDto?> GetDashboardAsync(Guid userId)
     {
         return await GetWithRetryAsync<PortfolioDashboardDto>($"/api/portfolio/{userId}/dashboard");
+    }
+
+    private static async Task ThrowApiErrorAsync(HttpResponseMessage response)
+    {
+        var message = $"Request failed ({(int)response.StatusCode}).";
+        try
+        {
+            var body = await response.Content.ReadFromJsonAsync<ApiErrorResponse>();
+            if (!string.IsNullOrWhiteSpace(body?.Error))
+                message = body.Error;
+        }
+        catch { }
+        throw new InvalidOperationException(message);
     }
 
     private async Task<T?> GetWithRetryAsync<T>(string url, int maxRetries = 10, int delayMs = 1000)
