@@ -51,7 +51,12 @@ public class PortfolioService
         return await _yahooFinanceService.GetCurrentPriceAsync(symbol);
     }
 
-    private static PortfolioItemDto MapToDto(PortfolioItem item, decimal? currentPriceUsd, decimal usdToEur)
+    public static decimal ComputeWeightedAveragePrice(decimal existingShares, decimal existingAvgPrice, decimal addedShares, decimal addedCostEur)
+        => existingShares + addedShares > 0
+            ? ((existingShares * existingAvgPrice) + addedCostEur) / (existingShares + addedShares)
+            : 0;
+
+    public static PortfolioItemDto MapToDto(PortfolioItem item, decimal? currentPriceUsd, decimal usdToEur)
     {
         var priceAvailable = currentPriceUsd.HasValue;
         var currentPriceEur = (currentPriceUsd ?? 0) * usdToEur;
@@ -92,15 +97,12 @@ public class PortfolioService
             .ToListAsync();
 
         var usdToEur = await _currencyService.GetUsdToEurRateAsync();
-        var result = new List<PortfolioItemDto>();
 
-        foreach (var item in items)
-        {
-            var currentPriceUsd = await GetCurrentPriceUsdAsync(item);
-            result.Add(MapToDto(item, currentPriceUsd, usdToEur));
-        }
+        // Prices fetched in parallel: sequential calls burn provider quotas fast.
+        var dtos = await Task.WhenAll(items.Select(async item =>
+            MapToDto(item, await GetCurrentPriceUsdAsync(item), usdToEur)));
 
-        return result;
+        return dtos.ToList();
     }
 
     public async Task<PortfolioItemDto?> AddItemAsync(CreatePortfolioItemRequest request)
@@ -114,8 +116,7 @@ public class PortfolioService
         if (existingItem != null)
         {
             var totalShares = existingItem.Shares + request.Shares;
-            var totalCost = (existingItem.Shares * existingItem.PurchasePrice) + (request.Shares * request.PurchasePrice);
-            existingItem.PurchasePrice = totalCost / totalShares;
+            existingItem.PurchasePrice = ComputeWeightedAveragePrice(existingItem.Shares, existingItem.PurchasePrice, request.Shares, request.Shares * request.PurchasePrice);
             existingItem.Shares = totalShares;
             existingItem.Commission += request.Commission;
             existingItem.UpdatedAt = DateTime.UtcNow;
@@ -209,13 +210,8 @@ public class PortfolioService
 
         var usdToEur = await _currencyService.GetUsdToEurRateAsync();
 
-        var currentValue = 0m;
-
-        foreach (var item in items)
-        {
-            var currentPrice = await GetCurrentPriceUsdAsync(item);
-            currentValue += item.Shares * (currentPrice ?? 0) * usdToEur;
-        }
+        var prices = await Task.WhenAll(items.Select(GetCurrentPriceUsdAsync));
+        var currentValue = items.Select((item, i) => item.Shares * (prices[i] ?? 0) * usdToEur).Sum();
 
         // Without reliable historical data providers, performance metrics default to 0.
         // This avoids Yahoo Finance rate limits and keeps the app responsive.
@@ -232,63 +228,97 @@ public class PortfolioService
         var usdToEur = await _currencyService.GetUsdToEurRateAsync();
         var result = new PortfolioDashboardDto();
 
-        var currentValue = 0m;
+        var prices = await Task.WhenAll(items.Select(GetCurrentPriceUsdAsync));
 
-        foreach (var item in items)
+        for (var i = 0; i < items.Count; i++)
         {
-            var currentPriceUsd = await GetCurrentPriceUsdAsync(item);
-            var dto = MapToDto(item, currentPriceUsd, usdToEur);
-            result.Items.Add(dto);
-
-            currentValue += item.Shares * (currentPriceUsd ?? 0) * usdToEur;
+            result.Items.Add(MapToDto(items[i], prices[i], usdToEur));
         }
 
         result.Items = result.Items.OrderByDescending(i => i.CurrentValue).ToList();
 
-        result.Performance = new PortfolioPerformanceDto();
-
         await SaveDailySnapshotAsync(userId, result.Items);
+
+        // Real period changes computed from stored daily snapshots.
+        result.Performance = await ComputePerformanceFromHistoryAsync(userId);
 
         return result;
     }
 
-    // One snapshot per UTC day: first dashboard load of the day records each
-    // priced position plus the portfolio total. Later loads the same day are no-ops.
+    private async Task<PortfolioPerformanceDto> ComputePerformanceFromHistoryAsync(Guid userId)
+    {
+        var totals = await _context.PortfolioHistoryPoints
+            .AsNoTracking()
+            .Where(p => p.UserId == userId && p.ItemId == Guid.Empty)
+            .OrderBy(p => p.Date)
+            .ToListAsync();
+
+        var perf = new PortfolioPerformanceDto();
+        if (totals.Count < 2)
+            return perf;
+
+        var last = totals[^1];
+        perf.Daily = ChangeOverDays(totals, last, 1);
+        perf.Weekly = ChangeOverDays(totals, last, 7);
+        perf.Monthly = ChangeOverDays(totals, last, 30);
+        perf.Ytd = YtdChange(totals, last);
+        perf.Yearly = ChangeOverDays(totals, last, 365);
+        return perf;
+    }
+
+    private static decimal ChangeOverDays(List<PortfolioHistoryPoint> points, PortfolioHistoryPoint last, int daysBack)
+    {
+        var cutoff = last.Date.AddDays(-daysBack);
+        var baseline = points.LastOrDefault(p => p.Date <= cutoff);
+        if (baseline == null || baseline.ValueEur == 0)
+            return 0;
+        return (last.ValueEur - baseline.ValueEur) / baseline.ValueEur * 100;
+    }
+
+    private static decimal YtdChange(List<PortfolioHistoryPoint> points, PortfolioHistoryPoint last)
+    {
+        var jan1 = new DateTime(last.Date.Year, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var baseline = points.LastOrDefault(p => p.Date < jan1)
+                       ?? points.FirstOrDefault(p => p.Date >= jan1 && p.Date < last.Date);
+        if (baseline == null || baseline.ValueEur == 0)
+            return 0;
+        return (last.ValueEur - baseline.ValueEur) / baseline.ValueEur * 100;
+    }
+
+    // Upserts today's snapshot on every dashboard load so the current day always
+    // reflects live prices (a backfill may have pre-created forward-filled rows).
     private async Task SaveDailySnapshotAsync(Guid userId, List<PortfolioItemDto> items)
     {
         try
         {
             var today = DateTime.UtcNow.Date;
-
-            var alreadySnapshotted = await _context.PortfolioHistoryPoints
-                .AnyAsync(p => p.UserId == userId && p.Date == today);
-
-            if (alreadySnapshotted)
-                return;
-
             var pricedItems = items.Where(i => i.PriceAvailable).ToList();
             if (pricedItems.Count == 0)
                 return;
 
-            var points = new List<PortfolioHistoryPoint>
-            {
-                new()
-                {
-                    UserId = userId,
-                    ItemId = Guid.Empty,
-                    Date = today,
-                    ValueEur = pricedItems.Sum(i => i.CurrentValue)
-                }
-            };
-            points.AddRange(pricedItems.Select(i => new PortfolioHistoryPoint
-            {
-                UserId = userId,
-                ItemId = i.Id,
-                Date = today,
-                ValueEur = i.CurrentValue
-            }));
+            var todaysRows = await _context.PortfolioHistoryPoints
+                .Where(p => p.UserId == userId && p.Date == today)
+                .ToListAsync();
 
-            _context.PortfolioHistoryPoints.AddRange(points);
+            void Upsert(Guid itemId, decimal value)
+            {
+                var row = todaysRows.FirstOrDefault(p => p.ItemId == itemId);
+                if (row != null)
+                {
+                    row.ValueEur = decimal.Round(value, 2);
+                    return;
+                }
+                var np = new PortfolioHistoryPoint { UserId = userId, ItemId = itemId, Date = today, ValueEur = decimal.Round(value, 2) };
+                todaysRows.Add(np);
+                _context.PortfolioHistoryPoints.Add(np);
+            }
+
+            foreach (var item in pricedItems)
+            {
+                Upsert(item.Id, item.CurrentValue);
+            }
+            Upsert(Guid.Empty, pricedItems.Sum(i => i.CurrentValue));
+
             await _context.SaveChangesAsync();
         }
         catch (Exception ex)

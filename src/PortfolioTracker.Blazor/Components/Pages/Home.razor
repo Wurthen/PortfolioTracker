@@ -10,10 +10,16 @@
 <div class="container-fluid py-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1 class="h2 mb-0">My Portfolio</h1>
-        <button class="btn btn-primary" @onclick="ShowAddDialog">
-            <span class="oi oi-plus me-1"></span>
-            Add Investment
-        </button>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-secondary" @onclick='() => showTransferDialog = true'>
+                <span class="oi oi-loop-square me-1"></span>
+                Traspaso
+            </button>
+            <button class="btn btn-primary" @onclick="ShowAddDialog">
+                <span class="oi oi-plus me-1"></span>
+                Add Investment
+            </button>
+        </div>
     </div>
 
     @if (IsLoading)
@@ -60,32 +66,40 @@
                 @if (Performance != null)
                 {
                     <div class="card mb-4">
-                        <div class="card-header">
-                            <h5 class="mb-0">Performance</h5>
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">Rentabilidad</h5>
+                            <small class="text-muted" title="Modificada por el momento y cuant&iacute;a de tus aportaciones (M&eacute;todo Dietz). Los traspasos entre fondos no cuentan como aportaci&oacute;n.">ponderada por aportaciones</small>
                         </div>
                         <div class="card-body">
-                            <div class="row text-center">
-                                <div class="col">
-                                    <small class="text-muted d-block">1 Day</small>
-                                    <span class="fw-bold @GetGainLossClass(Performance.Daily)">@Performance.Daily.ToString("F2")%</span>
+                            <table class="table table-sm table-borderless mb-0 text-center align-middle">
+                                <tbody>
+                                    <tr>
+                                        @foreach (var p in PerfPeriods)
+                                        {
+                                            <td>
+                                                @if (p.MwrPct.HasValue)
+                                                {
+                                                    <span class="h5 fw-bold @GetGainLossClass(p.MwrPct.Value)">@p.MwrPct.Value.ToString("+0.00;-0.00;0.00")%</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="h5 text-muted">&mdash;</span>
+                                                }
+                                                <small class="text-muted d-block">@p.Label</small>
+                                            </td>
+                                        }
+                                    </tr>
+                                </tbody>
+                            </table>
+                            @if (DetailedPerf?.XirrSinceInceptionPct is { } xirr)
+                            {
+                                <hr class="my-2" />
+                                <div class="text-end small pe-2">
+                                    <span class="text-muted">TIR (XIRR) desde inicio:</span>
+                                    <span class="fw-bold @GetGainLossClass(xirr)">@xirr.ToString("+0.00;-0.00;0.00")%</span>
+                                    <span class="text-muted ms-1" title="Rentabilidad anualizada ponderada por aportaciones">(anualizada)</span>
                                 </div>
-                                <div class="col">
-                                    <small class="text-muted d-block">1 Week</small>
-                                    <span class="fw-bold @GetGainLossClass(Performance.Weekly)">@Performance.Weekly.ToString("F2")%</span>
-                                </div>
-                                <div class="col">
-                                    <small class="text-muted d-block">1 Month</small>
-                                    <span class="fw-bold @GetGainLossClass(Performance.Monthly)">@Performance.Monthly.ToString("F2")%</span>
-                                </div>
-                                <div class="col">
-                                    <small class="text-muted d-block">YTD</small>
-                                    <span class="fw-bold @GetGainLossClass(Performance.Ytd)">@Performance.Ytd.ToString("F2")%</span>
-                                </div>
-                                <div class="col">
-                                    <small class="text-muted d-block">1 Year</small>
-                                    <span class="fw-bold @GetGainLossClass(Performance.Yearly)">@Performance.Yearly.ToString("F2")%</span>
-                                </div>
-                            </div>
+                            }
                         </div>
                     </div>
                 }
@@ -98,27 +112,62 @@
         <div class="card mb-4">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0">Evoluci&oacute;n del valor</h5>
-                <div class="btn-group btn-group-sm" role="group">
+                <div class="d-flex align-items-center gap-2">
+                    @if (History == null || History.Total.Count < 2)
+                    {
+                        <button type="button" class="btn btn-sm btn-outline-info" @onclick="RunBackfill" disabled="@isBackfilling">
+                            @if (isBackfilling)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1"></span>
+                            }
+                            Cargar hist&oacute;rico 12m
+                        </button>
+                    }
+                    <div class="btn-group btn-group-sm" role="group">
                     @foreach (var period in Periods)
                     {
                         <button type="button" class="btn @(SelectedPeriod == period.Key ? "btn-primary" : "btn-outline-secondary")"
                                 @onclick="() => SelectPeriod(period.Key)">
-                            @period.Label
+                            @(period.Key == "ytd" ? YtdLabel : period.Label)
                         </button>
                     }
+                    </div>
                 </div>
             </div>
             <div class="card-body">
                 @if (History != null)
                 {
-                    <div class="d-flex justify-content-between align-items-baseline mb-2">
-                        <span class="text-muted small">@PeriodRangeText</span>
-                        <span class="h5 mb-0 @GetGainLossClass(PeriodChangePercent)">
-                            @PeriodChangePercent.ToString("F2")%
-                            <small class="text-muted">en el periodo</small>
+                    <div class="d-flex align-items-center gap-3 mb-3">
+                        <span class="display-5 fw-bold lh-1 @GetGainLossClass(PeriodChangePercent)">
+                            @(FilteredTotalPoints.Count >= 2 ? $"{PeriodChangePercent.ToString("+0.00;-0.00;0.00")}%" : "&mdash;")
                         </span>
+                        <div class="small">
+                            <div class="fw-semibold">@PerfLabelForPeriod en el periodo</div>
+                            <div class="text-muted">
+                                @if (FilteredTotalPoints.Count >= 2)
+                                {
+                                    @($"{PeriodChangeEur.ToString("+#,##0.00;-#,##0.00;0.00")}")
+                                    @:&euro;
+                                }
+                                else
+                                {
+                                    @:Sin datos
+                                }
+                            </div>
+                        </div>
+                        <span class="ms-auto text-muted small">@PeriodRangeText</span>
                     </div>
-                    <PortfolioChart Points="FilteredTotalPoints" />
+
+                    @if (SelectedPeriod == "1d")
+                    {
+                        <p class="text-muted small mb-0">
+                            Desglose diario por posici&oacute;n en la columna <strong>Hoy</strong> de la tabla inferior.
+                        </p>
+                    }
+                    else
+                    {
+                        <PortfolioChart Points="FilteredTotalPoints" />
+                    }
                 }
             </div>
         </div>
@@ -127,13 +176,9 @@
             <table class="table table-hover">
                 <thead class="table-light">
                     <tr>
-                        <th><span role="button" class="user-select-none" style="cursor:pointer" @onclick='() => ToggleSort("Symbol")'>Symbol @SortIcon("Symbol")</span></th>
-                        <th><span role="button" class="user-select-none" style="cursor:pointer" @onclick='() => ToggleSort("Name")'>Name @SortIcon("Name")</span></th>
-                        <th class="text-end"><span role="button" class="user-select-none" style="cursor:pointer" @onclick='() => ToggleSort("Shares")'>Shares @SortIcon("Shares")</span></th>
-                        <th class="text-end"><span role="button" class="user-select-none" style="cursor:pointer" @onclick='() => ToggleSort("PurchasePrice")'>Purchase Price @SortIcon("PurchasePrice")</span></th>
-                        <th class="text-end"><span role="button" class="user-select-none" style="cursor:pointer" @onclick='() => ToggleSort("CurrentPriceUsd")'>Current Price (USD) @SortIcon("CurrentPriceUsd")</span></th>
-                        <th class="text-end"><span role="button" class="user-select-none" style="cursor:pointer" @onclick='() => ToggleSort("CurrentPrice")'>Current Price (EUR) @SortIcon("CurrentPrice")</span></th>
-                        <th class="text-end"><span role="button" class="user-select-none" style="cursor:pointer" @onclick='() => ToggleSort("CurrentValue")'>Current Value @SortIcon("CurrentValue")</span></th>
+                        <th><span role="button" class="user-select-none" style="cursor:pointer" @onclick='() => ToggleSort("Name")'>Posici&oacute;n @SortIcon("Name")</span></th>
+                        <th class="text-end"><span role="button" class="user-select-none" style="cursor:pointer" @onclick='() => ToggleSort("CurrentValue")'>Valor actual @SortIcon("CurrentValue")</span></th>
+                        <th class="text-end">Hoy</th>
                         <th class="text-end"><span role="button" class="user-select-none" style="cursor:pointer" @onclick='() => ToggleSort("GainLoss")'>Gain/Loss @SortIcon("GainLoss")</span></th>
                         <th class="text-end"><span role="button" class="user-select-none" style="cursor:pointer" @onclick='() => ToggleSort("GainLossPercent")'>Gain/Loss % @SortIcon("GainLossPercent")</span></th>
                         <th></th>
@@ -144,30 +189,50 @@
                     {
                         <tr>
                             <td>
-                                <strong>@item.Symbol</strong>
+                                <strong>@item.Name</strong>
+                                <small class="text-muted ms-1">@item.Symbol</small>
                                 @if (item.UseAlternativeSymbol)
                                 {
                                     <span class="badge bg-info ms-1" title="Using alternative symbol @item.AlternativeSymbol">A</span>
                                 }
                             </td>
-                            <td>@item.Name</td>
-                            <td class="text-end">@item.Shares.ToString("N4")</td>
-                            <td class="text-end">@item.PurchasePrice.ToString("N4") €</td>
                             @if (item.PriceAvailable)
                             {
-                                <td class="text-end">$@item.CurrentPriceUsd.ToString("N4")</td>
-                                <td class="text-end">@item.CurrentPrice.ToString("N4") €</td>
+                                var daily = DailyByItem.GetValueOrDefault(item.Id);
                                 <td class="text-end">@item.CurrentValue.ToString("N2") €</td>
+                                <td class="text-end">
+                                    @if (daily != null && daily.HasData)
+                                    {
+                                        @if (daily.ChangePct!.Value == 0 && item.Type.Equals("Fund", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            <span class="text-muted" title="El NAV de hoy a&uacute;n no se ha publicado (~20:00-22:00). Se actualizar&aacute; autom&aacute;ticamente.">0.00%</span>
+                                            <small class="text-muted d-block">@daily.ChangeEur!.Value.ToString("+#,##0.00;-#,##0.00;0.00") €</small>
+                                        }
+                                        else
+                                        {
+                                            <span class="fw-bold @GetGainLossClass(daily.ChangePct!.Value)">@daily.ChangePct.Value.ToString("+0.00;-0.00;0.00")%</span>
+                                            <small class="text-muted d-block">@daily.ChangeEur!.Value.ToString("+#,##0.00;-#,##0.00;0.00") €</small>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">&mdash;</span>
+                                    }
+                                </td>
                                 <td class="text-end @GetGainLossClass(item.GainLoss)">@item.GainLoss.ToString("N2") €</td>
                                 <td class="text-end @GetGainLossClass(item.GainLossPercent)">@item.GainLossPercent.ToString("F2")%</td>
                             }
                             else
                             {
-                                <td class="text-end text-muted" colspan="5" title="Price unavailable: no provider returned a price for this symbol.">
+                                <td class="text-end text-muted">@item.CurrentValue.ToString("N2") €</td>
+                                <td class="text-end text-muted" colspan="3" title="Price unavailable: no provider returned a price for this symbol.">
                                     N/A <span class="badge bg-warning text-dark ms-1">no price</span>
                                 </td>
                             }
                             <td class="text-end">
+                                <button class="btn btn-sm btn-outline-secondary me-1" title="Ver evolución" @onclick="() => ShowDetail(item)">
+                                    <span class="oi oi-graph"></span>
+                                </button>
                                 <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => ShowEditDialog(item)">
                                     <span class="oi oi-pencil"></span>
                                 </button>
@@ -193,6 +258,105 @@
     Item="selectedItem" 
     UserId="UserIdService.UserId" 
     OnItemUpdated="RefreshPortfolio" />
+
+<TransferDialog
+    @bind-IsVisible="showTransferDialog"
+    UserId="UserIdService.UserId"
+    Items="PortfolioItems"
+    OnTransferred="RefreshPortfolio" />
+
+@if (showDetailModal && detailItem != null)
+{
+    var series = History != null && History.Items.TryGetValue(detailItem.Id.ToString(), out var s)
+        ? s
+        : new List<HistoryPointDto>();
+    var weight = TotalValue > 0 ? detailItem.CurrentValue / TotalValue * 100 : 0;
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        @detailItem.Name
+                        <small class="text-muted fw-normal">(@detailItem.Symbol)</small>
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseDetail"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="text-muted small mb-3">
+                        Precio actual:
+                        @if (detailItem.PriceAvailable)
+                        {
+                            <text>$@detailItem.CurrentPriceUsd.ToString("N4") &middot; @detailItem.CurrentPrice.ToString("N4") &euro;</text>
+                        }
+                        else
+                        {
+                            <text>N/A</text>
+                        }
+                        @if (!string.IsNullOrEmpty(detailItem.AlternativeSymbol))
+                        {
+                            <span class="ms-2">ISIN EOD: @detailItem.AlternativeSymbol</span>
+                        }
+                    </div>
+                    <div class="row text-center mb-3">
+                        <div class="col">
+                            <small class="text-muted d-block">Valor actual</small>
+                            <span class="fw-bold">@(detailItem.PriceAvailable ? detailItem.CurrentValue.ToString("N2") + " €" : "N/A")</span>
+                        </div>
+                        <div class="col">
+                            <small class="text-muted d-block">Peso en cartera</small>
+                            <span class="fw-bold">@weight.ToString("F1")%</span>
+                        </div>
+                        <div class="col">
+                            <small class="text-muted d-block">Ganancia</small>
+                            <span class="fw-bold @GetGainLossClass(detailItem.GainLoss)">
+                                @(detailItem.PriceAvailable ? $"{detailItem.GainLoss:N2} € ({detailItem.GainLossPercent:F2}%)" : "N/A")
+                            </span>
+                        </div>
+                        <div class="col">
+                            <small class="text-muted d-block">Participaciones</small>
+                            <span class="fw-bold">@detailItem.Shares.ToString("N4")</span>
+                        </div>
+                        <div class="col">
+                            <small class="text-muted d-block">Precio medio</small>
+                            <span class="fw-bold">@detailItem.PurchasePrice.ToString("N4") €</span>
+                        </div>
+                    </div>
+                    <PortfolioChart Points="series" />
+
+                    <h6 class="mt-4 mb-2">Operaciones</h6>
+                    @if (itemTransactions.Count > 0)
+                    {
+                        <table class="table table-sm table-striped mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Fecha</th><th>Tipo</th><th class="text-end">Participaciones</th><th class="text-end">Importe</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var tx in itemTransactions)
+                                {
+                                    <tr>
+                                        <td>@tx.Date.ToString("dd/MM/yyyy")</td>
+                                        <td>@TxTypeLabel(tx.Type)</td>
+                                        <td class="text-end">@tx.Shares.ToString("N4")</td>
+                                        <td class="text-end">@tx.AmountEur.ToString("N2") €</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                    else
+                    {
+                        <p class="text-muted small mb-0">Sin operaciones registradas.</p>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseDetail">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
 
 @if (showDeleteConfirm && itemToDelete != null)
 {
@@ -226,7 +390,7 @@
 
 @if (hasError)
 {
-    <div class="alert alert-danger position-fixed bottom-0 end-0 m-3" style="z-index: 9999;">
+    <div class="alert @(messageIsInfo ? "alert-info" : "alert-danger") position-fixed bottom-0 end-0 m-3" style="z-index: 9999;">
         @errorMessage
         <button type="button" class="btn-close" @onclick="DismissError"></button>
     </div>
@@ -236,7 +400,7 @@
     private List<PortfolioItemDto> PortfolioItems { get; set; } = [];
     private PortfolioPerformanceDto? Performance { get; set; }
     private PortfolioHistoryResponseDto? History { get; set; }
-    private string SelectedPeriod { get; set; } = "1m";
+    private string SelectedPeriod { get; set; } = "1d";
     private bool IsLoading { get; set; } = true;
     private bool showAddDialog { get; set; } = false;
     private bool showEditDialog { get; set; } = false;
@@ -244,8 +408,79 @@
     private bool showDeleteConfirm { get; set; } = false;
     private PortfolioItemDto? itemToDelete;
     private bool isDeleting;
+
+    private PortfolioItemDto? detailItem;
+    private bool showDetailModal { get; set; } = false;
+    private bool isBackfilling = false;
+    private bool showTransferDialog { get; set; } = false;
+    private DetailedPerformanceDto? DetailedPerf { get; set; }
+    private List<PeriodPerformanceDto> PerfPeriods => DetailedPerf?.Periods ?? [];
+    private List<TransactionDto> itemTransactions { get; set; } = [];
+
+    private static string TxTypeLabel(string type) => type switch
+    {
+        "Buy" => "Suscripci\u00f3n",
+        "Sell" => "Reembolso",
+        "TransferIn" => "Traspaso recibido",
+        "TransferOut" => "Traspaso emitido",
+        _ => type
+    };
+
+    private void ShowDetail(PortfolioItemDto item)
+    {
+        detailItem = item;
+        showDetailModal = true;
+        itemTransactions = [];
+        _ = LoadItemTransactionsAsync(item.Id);
+    }
+
+    private async Task LoadItemTransactionsAsync(Guid itemId)
+    {
+        var txs = await ApiService.GetItemTransactionsAsync(UserIdService.UserId, itemId);
+        if (detailItem?.Id == itemId)
+        {
+            itemTransactions = txs;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void CloseDetail()
+    {
+        detailItem = null;
+        showDetailModal = false;
+    }
+
+    private async Task RunBackfill()
+    {
+        isBackfilling = true;
+        try
+        {
+            var result = await ApiService.BackfillHistoryAsync(UserIdService.UserId);
+            if (result != null)
+            {
+                var ok = result.Items.Count(i => i.Status == "ok" || i.Status == "up-to-date");
+                var failed = result.Items.Count - ok;
+                History = await ApiService.GetHistoryAsync(UserIdService.UserId);
+                ShowInfo($"Hist\u00f3rico: {result.TotalPointsInserted} puntos insertados ({ok} s\u00edmbolos OK{(failed > 0 ? $", {failed} con error" : "")}).");
+            }
+            else
+            {
+                ShowError("No se pudo cargar el hist\u00f3rico.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Backfill failed");
+            ShowError($"Error al cargar hist\u00f3rico: {ex.Message}");
+        }
+        finally
+        {
+            isBackfilling = false;
+        }
+    }
     private bool hasError = false;
     private string errorMessage = "";
+    private bool messageIsInfo = false;
 
     private string sortColumn { get; set; } = "CurrentValue";
     private bool sortAsc { get; set; } = false;
@@ -308,11 +543,18 @@
     {
         get
         {
-            if (History == null)
+            if (History == null || History.Total.Count == 0)
                 return [];
+
+            var sorted = History.Total.OrderBy(p => p.Date).ToList();
+
+            // 1D = latest point vs the previous available day (weekend/NAV lag included),
+            // never the "not enough data" placeholder.
+            if (SelectedPeriod == "1d")
+                return sorted.Count == 1 ? [sorted[^1]] : [sorted[^2], sorted[^1]];
+
             var cutoff = SelectedPeriod switch
             {
-                "1d" => DateTime.UtcNow.Date,
                 "7d" => DateTime.UtcNow.Date.AddDays(-7),
                 "1m" => DateTime.UtcNow.Date.AddDays(-30),
                 "3m" => DateTime.UtcNow.Date.AddDays(-90),
@@ -321,7 +563,7 @@
                 "1y" => DateTime.UtcNow.Date.AddDays(-365),
                 _ => DateTime.MinValue
             };
-            return History.Total.Where(p => p.Date >= cutoff).ToList();
+            return sorted.Where(p => p.Date >= cutoff).ToList();
         }
     }
 
@@ -333,6 +575,76 @@
             if (pts.Count == 0 || pts[0].Value == 0)
                 return 0;
             return (pts[^1].Value - pts[0].Value) / pts[0].Value * 100;
+        }
+    }
+
+    private decimal PeriodChangeEur
+    {
+        get
+        {
+            var pts = FilteredTotalPoints;
+            return pts.Count >= 2 ? pts[^1].Value - pts[0].Value : 0;
+        }
+    }
+
+    // While the whole history lives inside the current calendar year there is no
+    // calendar-YTD to show: the button means "since inception" instead.
+    private string YtdLabel
+    {
+        get
+        {
+            var firstDate = History?.Total.OrderBy(p => p.Date).FirstOrDefault()?.Date;
+            return firstDate.HasValue && firstDate.Value < new DateTime(DateTime.UtcNow.Year, 1, 1)
+                ? "YTD"
+                : "Inicio";
+        }
+    }
+
+    private string PerfLabelForPeriod
+    {
+        get
+        {
+            var label = Periods.First(p => p.Key == SelectedPeriod).Label;
+            if (SelectedPeriod == "ytd")
+                label = YtdLabel;
+            return label + (SelectedPeriod == "1d" ? " (vs \u00faltimo d\u00eda disponible)" : "");
+        }
+    }
+
+    private sealed record DailyPositionChange(string Name, string Symbol, decimal Value, bool HasData, decimal? ChangeEur, decimal? ChangePct);
+
+    // Per-position daily change from the stored per-item history series,
+    // consumed by the "Hoy" column of the main table.
+    private Dictionary<Guid, DailyPositionChange> DailyByItem
+    {
+        get
+        {
+            var dict = new Dictionary<Guid, DailyPositionChange>();
+            if (History == null || PortfolioItems.Count == 0)
+                return dict;
+
+            foreach (var item in PortfolioItems)
+            {
+                if (!History.Items.TryGetValue(item.Id.ToString(), out var pts) || pts.Count < 2)
+                {
+                    dict[item.Id] = new DailyPositionChange(item.Name, item.Symbol, item.CurrentValue, false, null, null);
+                    continue;
+                }
+
+                var sorted = pts.OrderBy(p => p.Date).ToList();
+                var prev = sorted[^2].Value;
+                var last = sorted[^1].Value;
+                var change = last - prev;
+                dict[item.Id] = new DailyPositionChange(
+                    item.Name,
+                    item.Symbol,
+                    last,
+                    true,
+                    change,
+                    prev != 0 ? change / prev * 100m : 0m);
+            }
+
+            return dict;
         }
     }
 
@@ -382,6 +694,7 @@
                 Logger.LogInformation("Dashboard loaded: {Count} items", PortfolioItems.Count);
 
                 History = await ApiService.GetHistoryAsync(UserIdService.UserId);
+                DetailedPerf = await ApiService.GetDetailedPerformanceAsync(UserIdService.UserId);
             }
             else
             {
@@ -452,6 +765,14 @@
     private void ShowError(string message)
     {
         errorMessage = message;
+        messageIsInfo = false;
+        hasError = true;
+    }
+
+    private void ShowInfo(string message)
+    {
+        errorMessage = message;
+        messageIsInfo = true;
         hasError = true;
     }
 

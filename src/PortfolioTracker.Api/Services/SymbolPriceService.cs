@@ -6,16 +6,19 @@ namespace PortfolioTracker.Api.Services;
 
 public class SymbolPriceService
 {
-    private readonly PortfolioDbContext _context;
+    private readonly IDbContextFactory<PortfolioDbContext> _contextFactory;
 
-    public SymbolPriceService(PortfolioDbContext context)
+    public SymbolPriceService(IDbContextFactory<PortfolioDbContext> contextFactory)
     {
-        _context = context;
+        _contextFactory = contextFactory;
     }
 
+    // Short-lived contexts per operation: these calls run concurrently from
+    // parallel price fetches, so a shared scoped DbContext would explode.
     public async Task<SymbolPrice?> GetLatestPriceAsync(string symbol)
     {
-        return await _context.SymbolPrices
+        await using var db = await _contextFactory.CreateDbContextAsync();
+        return await db.SymbolPrices
             .AsNoTracking()
             .FirstOrDefaultAsync(s => s.Symbol == symbol.ToUpperInvariant());
     }
@@ -23,7 +26,8 @@ public class SymbolPriceService
     public async Task SavePriceAsync(string symbol, decimal price, string provider, string currency = "USD")
     {
         var normalizedSymbol = symbol.ToUpperInvariant();
-        var existing = await _context.SymbolPrices
+        await using var db = await _contextFactory.CreateDbContextAsync();
+        var existing = await db.SymbolPrices
             .FirstOrDefaultAsync(s => s.Symbol == normalizedSymbol);
 
         if (existing != null)
@@ -35,7 +39,7 @@ public class SymbolPriceService
         }
         else
         {
-            _context.SymbolPrices.Add(new SymbolPrice
+            db.SymbolPrices.Add(new SymbolPrice
             {
                 Symbol = normalizedSymbol,
                 Price = price,
@@ -45,6 +49,6 @@ public class SymbolPriceService
             });
         }
 
-        await _context.SaveChangesAsync();
+        await db.SaveChangesAsync();
     }
 }

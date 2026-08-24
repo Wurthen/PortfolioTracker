@@ -1,0 +1,156 @@
+@inject PortfolioApiService ApiService
+@inject ILogger<TransferDialog> Logger
+
+<div class="modal fade @(IsVisible ? "show d-block" : "")" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Traspaso entre fondos</h5>
+                <button type="button" class="btn-close" @onclick="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info small">
+                    Los traspasos entre fondos de inversi&oacute;n en Espa&ntilde;a no tributan (diferimiento fiscal).
+                    El importe se mueve &iacute;ntegro del fondo origen al destino.
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Fondo origen</label>
+                    <select class="form-select" @bind="FromItemId">
+                        <option value="">Seleccionar...</option>
+                        @foreach (var item in Items)
+                        {
+                            <option value="@item.Id">@item.Name (@item.Symbol) - @item.CurrentValue.ToString("N2") &euro;</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Fondo destino</label>
+                    <select class="form-select" @bind="ToItemId">
+                        <option value="">Seleccionar...</option>
+                        @foreach (var item in Items)
+                        {
+                            <option value="@item.Id">@item.Name (@item.Symbol)</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Importe (&euro;)</label>
+                    <input type="number" class="form-control" @bind="AmountEur" step="0.01" min="0.01" />
+                    @if (FromItem != null)
+                    {
+                        <small class="text-muted">M&aacute;ximo: @FromItem.CurrentValue.ToString("N2") &euro;</small>
+                    }
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Fecha</label>
+                    <input type="date" class="form-control" @bind="Date" />
+                </div>
+
+                @if (HasError)
+                {
+                    <div class="alert alert-danger">@ErrorMessage</div>
+                }
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" @onclick="Close">Cancelar</button>
+                <button type="button" class="btn btn-primary" @onclick="Save" disabled="@IsSaving">
+                    @if (IsSaving)
+                    {
+                        <span class="spinner-border spinner-border-sm"></span>
+                    }
+                    else
+                    {
+                        <span>Traspasar</span>
+                    }
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public bool IsVisible { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> IsVisibleChanged { get; set; }
+
+    [Parameter]
+    public Guid UserId { get; set; }
+
+    [Parameter]
+    public List<PortfolioItemDto> Items { get; set; } = [];
+
+    [Parameter]
+    public EventCallback OnTransferred { get; set; }
+
+    private Guid FromItemId { get; set; }
+    private Guid ToItemId { get; set; }
+    private decimal AmountEur { get; set; }
+    private DateTime? Date { get; set; }
+    private bool IsSaving { get; set; }
+    private bool HasError { get; set; }
+    private string ErrorMessage { get; set; } = "";
+
+    private PortfolioItemDto? FromItem => Items.FirstOrDefault(i => i.Id == FromItemId);
+
+    private async Task Save()
+    {
+        if (FromItemId == Guid.Empty || ToItemId == Guid.Empty || AmountEur <= 0)
+        {
+            HasError = true;
+            ErrorMessage = "Rellena origen, destino e importe.";
+            return;
+        }
+
+        IsSaving = true;
+        HasError = false;
+        try
+        {
+            var (ok, error) = await ApiService.TransferAsync(UserId, new TransferRequest
+            {
+                FromItemId = FromItemId,
+                ToItemId = ToItemId,
+                AmountEur = AmountEur,
+                Date = Date
+            });
+
+            if (ok)
+            {
+                Logger.LogInformation("Transfer executed for user {UserId}", UserId);
+                await OnTransferred.InvokeAsync();
+                await Close();
+            }
+            else
+            {
+                HasError = true;
+                ErrorMessage = error;
+            }
+        }
+        catch (Exception ex)
+        {
+            HasError = true;
+            ErrorMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            IsSaving = false;
+        }
+    }
+
+    private async Task Close()
+    {
+        FromItemId = Guid.Empty;
+        ToItemId = Guid.Empty;
+        AmountEur = 0;
+        Date = null;
+        IsSaving = false;
+        HasError = false;
+        ErrorMessage = "";
+        await IsVisibleChanged.InvokeAsync(false);
+    }
+}

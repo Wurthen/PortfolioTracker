@@ -8,7 +8,7 @@ public class CompositePriceProvider : IPriceProvider
     private readonly IPriceProvider[] _providers;
     private readonly SymbolPriceService _symbolPriceService;
     private readonly ILogger<CompositePriceProvider> _logger;
-    private static readonly ConcurrentDictionary<string, Task<decimal?>> _pendingRequests = new();
+    private static readonly ConcurrentDictionary<string, Lazy<Task<decimal?>>> _pendingRequests = new();
     public string Name => "Composite";
 
     public CompositePriceProvider(
@@ -28,12 +28,38 @@ public class CompositePriceProvider : IPriceProvider
         var normalizedSymbol = NormalizeFundSymbol(symbol);
         var cacheKey = $"req_{normalizedSymbol}";
 
-        return _pendingRequests.GetOrAdd(cacheKey, _ => FetchPriceAsync(normalizedSymbol, symbol))
-            .ContinueWith(t =>
-            {
-                _pendingRequests.TryRemove(cacheKey, out _);
-                return t.IsCompletedSuccessfully ? t.Result : throw t.Exception!;
-            });
+        // Lazy ensures the valueFactory (and therefore the provider chain) runs exactly once
+        // even under concurrent requests for the same symbol.
+        var lazy = _pendingRequests.GetOrAdd(
+            cacheKey,
+            _ => new Lazy<Task<decimal?>>(() => FetchPriceAsync(normalizedSymbol, symbol)));
+
+        try
+        {
+            return AwaitAndCleanupAsync(cacheKey, lazy);
+        }
+        catch
+        {
+            _pendingRequests.TryRemove(cacheKey, out _);
+            throw;
+        }
+    }
+
+    private async Task<decimal?> AwaitAndCleanupAsync(string cacheKey, Lazy<Task<decimal?>> lazy)
+    {
+        try
+        {
+            return await lazy.Value.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // HttpClient timeout: treat as "no price" instead of masking with an NRE.
+            return null;
+        }
+        finally
+        {
+            _pendingRequests.TryRemove(cacheKey, out _);
+        }
     }
 
     private async Task<decimal?> FetchPriceAsync(string normalizedSymbol, string originalSymbol)
@@ -42,26 +68,56 @@ public class CompositePriceProvider : IPriceProvider
 
         foreach (var provider in _providers)
         {
-            _logger.LogInformation("Trying provider: {ProviderName}", provider.Name);
-
-            var price = await provider.GetPriceAsync(normalizedSymbol);
+            decimal? price;
+            try
+            {
+                _logger.LogInformation("Trying provider: {ProviderName}", provider.Name);
+                price = await provider.GetPriceAsync(normalizedSymbol);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // One broken provider must not abort the whole chain.
+                _logger.LogError(ex, "Provider {ProviderName} threw, trying next", provider.Name);
+                continue;
+            }
 
             if (price.HasValue)
             {
                 _logger.LogInformation("Got price from {ProviderName}: {Price}", provider.Name, price.Value);
-                await _symbolPriceService.SavePriceAsync(normalizedSymbol, price.Value, provider.Name);
-                return price;
+
+                try
+                {
+                    await _symbolPriceService.SavePriceAsync(normalizedSymbol, price.Value, provider.Name);
+                }
+                catch (Exception ex)
+                {
+                    // Cache write failures must not lose the price we already have.
+                    _logger.LogError(ex, "Failed to persist price for {Symbol}", normalizedSymbol);
+                }
+
+                return price.Value;
             }
 
             _logger.LogWarning("Provider {ProviderName} returned null, trying next", provider.Name);
         }
 
-        var cached = await _symbolPriceService.GetLatestPriceAsync(normalizedSymbol);
-        if (cached != null)
+        try
         {
-            _logger.LogWarning("All live providers failed for {Symbol}, returning cached price {Price} from {Provider} at {UpdatedAt}",
-                originalSymbol, cached.Price, cached.Provider, cached.UpdatedAt);
-            return cached.Price;
+            var cached = await _symbolPriceService.GetLatestPriceAsync(normalizedSymbol);
+            if (cached != null)
+            {
+                _logger.LogWarning("All live providers failed for {Symbol}, returning cached price {Price} from {Provider} at {UpdatedAt}",
+                    originalSymbol, cached.Price, cached.Provider, cached.UpdatedAt);
+                return cached.Price;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Cache fallback read failed for {Symbol}", originalSymbol);
         }
 
         _logger.LogError("All providers failed for {Symbol} and no cached price available", originalSymbol);

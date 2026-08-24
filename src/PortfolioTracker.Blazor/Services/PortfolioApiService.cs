@@ -72,6 +72,54 @@ public class PortfolioApiService
         return await response.Content.ReadFromJsonAsync<PortfolioHistoryResponseDto>();
     }
 
+    public async Task<BackfillResultDto?> BackfillHistoryAsync(Guid userId)
+    {
+        var response = await Client.PostAsync($"/api/portfolio/{userId}/backfill", null);
+        if (!response.IsSuccessStatusCode)
+            return null;
+        return await response.Content.ReadFromJsonAsync<BackfillResultDto>();
+    }
+
+    public async Task<List<TransactionDto>> GetTransactionsAsync(Guid userId)
+    {
+        try
+        {
+            return await Client.GetFromJsonAsync<List<TransactionDto>>($"/api/portfolio/{userId}/transactions") ?? [];
+        }
+        catch { return []; }
+    }
+
+    public async Task<List<TransactionDto>> GetItemTransactionsAsync(Guid userId, Guid itemId)
+    {
+        try
+        {
+            return await Client.GetFromJsonAsync<List<TransactionDto>>($"/api/portfolio/{userId}/transactions/{itemId}") ?? [];
+        }
+        catch { return []; }
+    }
+
+    public async Task<(bool Ok, string Error)> TransferAsync(Guid userId, TransferRequest request)
+    {
+        var response = await Client.PostAsJsonAsync($"/api/portfolio/{userId}/transfers", request);
+        if (response.IsSuccessStatusCode)
+            return (true, "");
+        try
+        {
+            var err = await response.Content.ReadFromJsonAsync<ApiErrorResponse>();
+            return (false, err?.Error ?? "Error en el traspaso.");
+        }
+        catch { return (false, $"Error ({(int)response.StatusCode})."); }
+    }
+
+    public async Task<DetailedPerformanceDto?> GetDetailedPerformanceAsync(Guid userId)
+    {
+        try
+        {
+            return await Client.GetFromJsonAsync<DetailedPerformanceDto>($"/api/portfolio/{userId}/performance-detailed");
+        }
+        catch { return null; }
+    }
+
     private static async Task ThrowApiErrorAsync(HttpResponseMessage response)
     {
         var message = $"Request failed ({(int)response.StatusCode}).";

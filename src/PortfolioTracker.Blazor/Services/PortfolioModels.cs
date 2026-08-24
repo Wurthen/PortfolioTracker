@@ -87,3 +87,52 @@ public class HistoryPointDto
     public DateTime Date { get; set; }
     public decimal Value { get; set; }
 }
+
+public class BackfillResultDto
+{
+    public List<BackfillItemResultDto> Items { get; set; } = [];
+    public int TotalPointsInserted { get; set; }
+}
+
+public class BackfillItemResultDto
+{
+    public string Symbol { get; set; } = "";
+    public string Source { get; set; } = "";
+    public int PointsInserted { get; set; }
+    public string Status { get; set; } = "";
+}
+
+public class TransactionDto
+{
+    public Guid Id { get; set; }
+    public Guid ItemId { get; set; }
+    public string Symbol { get; set; } = "";
+    public string ItemName { get; set; } = "";
+    public string Type { get; set; } = "";
+    public DateTime Date { get; set; }
+    public decimal Shares { get; set; }
+    public decimal AmountEur { get; set; }
+    public decimal Commission { get; set; }
+}
+
+public class TransferRequest
+{
+    public Guid FromItemId { get; set; }
+    public Guid ToItemId { get; set; }
+    public decimal AmountEur { get; set; }
+    public DateTime? Date { get; set; }
+}
+
+public class PeriodPerformanceDto
+{
+    public string Key { get; set; } = "";
+    public string Label { get; set; } = "";
+    public decimal SimplePct { get; set; }
+    public decimal? MwrPct { get; set; }
+}
+
+public class DetailedPerformanceDto
+{
+    public List<PeriodPerformanceDto> Periods { get; set; } = [];
+    public decimal? XirrSinceInceptionPct { get; set; }
+}

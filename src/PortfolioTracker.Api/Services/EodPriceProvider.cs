@@ -11,15 +11,17 @@ public class EodPriceProvider : IPriceProvider
     private readonly ILogger<EodPriceProvider> _logger;
     private readonly IMemoryCache _cache;
     private readonly CurrencyService _currencyService;
+    private readonly SymbolPriceService _symbolPriceService;
     private readonly string? _apiKey;
     public string Name => "EOD";
 
-    public EodPriceProvider(HttpClient httpClient, ILogger<EodPriceProvider> logger, IMemoryCache cache, CurrencyService currencyService, IConfiguration configuration)
+    public EodPriceProvider(HttpClient httpClient, ILogger<EodPriceProvider> logger, IMemoryCache cache, CurrencyService currencyService, SymbolPriceService symbolPriceService, IConfiguration configuration)
     {
         _httpClient = httpClient;
         _logger = logger;
         _cache = cache;
         _currencyService = currencyService;
+        _symbolPriceService = symbolPriceService;
         _apiKey = configuration["EodApiKey"];
     }
 
@@ -39,20 +41,48 @@ public class EodPriceProvider : IPriceProvider
             return cachedPrice;
         }
 
+        // DAILY CADENCE GATE (free tier = 20 calls/day): live-fetch each fund at most
+        // once per UTC day, plus one evening refresh after 19:00 UTC so tonight's NAV
+        // can be picked up the same evening. Otherwise serve the persisted DB value.
+        var persistedRow = await _symbolPriceService.GetLatestPriceAsync(symbol);
+        var lastFetchUtc = persistedRow?.UpdatedAt ?? DateTime.MinValue;
+        var todayUtc = DateTime.UtcNow.Date;
+        var eveningWindow = DateTime.UtcNow.TimeOfDay >= TimeSpan.FromHours(19);
+        var shouldFetchLive = persistedRow == null
+            || lastFetchUtc.Date < todayUtc
+            || (lastFetchUtc < todayUtc.AddHours(17) && eveningWindow);
+
+        if (!shouldFetchLive && persistedRow != null)
+        {
+            if (persistedRow.UpdatedAt < DateTime.UtcNow.AddDays(-7))
+            {
+                _logger.LogWarning("EOD persisted price for {Symbol} is stale ({UpdatedAt}) and daily cadence says skip; returning null",
+                    symbol, persistedRow.UpdatedAt);
+                return null;
+            }
+
+            _logger.LogInformation("EOD daily budget already used for {Symbol} (last {Last:HH:mm} UTC), serving persisted {Price}",
+                symbol, lastFetchUtc, persistedRow.Price);
+            _cache.Set(cacheKey, persistedRow.Price, TimeSpan.FromMinutes(15));
+            return persistedRow.Price;
+        }
+
         try
         {
             var price = await TryGetRealTimePriceAsync(symbol);
-            if (!price.HasValue)
+            if (!price.HasValue && !QuotaBlocked)
             {
                 price = await TryGetEodPriceAsync(symbol);
             }
 
-            if (!price.HasValue && symbol.EndsWith(".EUFUND", StringComparison.OrdinalIgnoreCase))
+            // 401/402/403/429 = bad key or daily quota gone: further attempts only burn
+            // what little quota may remain. Fall straight to the persisted price.
+            if (!price.HasValue && !QuotaBlocked && symbol.EndsWith(".EUFUND", StringComparison.OrdinalIgnoreCase))
             {
                 var symbolWithoutSuffix = symbol[..^7];
                 _logger.LogInformation("EOD trying without EUFUND suffix: {Symbol}", symbolWithoutSuffix);
                 price = await TryGetRealTimePriceAsync(symbolWithoutSuffix);
-                if (!price.HasValue)
+                if (!price.HasValue && !QuotaBlocked)
                 {
                     price = await TryGetEodPriceAsync(symbolWithoutSuffix);
                 }
@@ -67,6 +97,34 @@ public class EodPriceProvider : IPriceProvider
                 var cacheOptions = new MemoryCacheEntryOptions()
                     .SetAbsoluteExpiration(TimeSpan.FromMinutes(15));
                 _cache.Set(cacheKey, price.Value, cacheOptions);
+
+                // Persist so quota exhaustion / outages can fall back later.
+                try
+                {
+                    await _symbolPriceService.SavePriceAsync(symbol, price.Value, "EOD");
+                }
+                catch (Exception persistEx)
+                {
+                    _logger.LogError(persistEx, "Failed to persist EOD price for {Symbol}", symbol);
+                }
+            }
+            else
+            {
+                // Quota exhausted or outage: last successful price beats N/A — but only if
+                // reasonably fresh, otherwise a weeks-old cached price fakes a big daily move.
+                var persisted = await _symbolPriceService.GetLatestPriceAsync(symbol);
+                if (persisted != null && persisted.UpdatedAt >= DateTime.UtcNow.AddDays(-7))
+                {
+                    _logger.LogWarning("EOD live fetch failed for {Symbol}, using persisted price {Price} from {UpdatedAt}",
+                        symbol, persisted.Price, persisted.UpdatedAt);
+                    _cache.Set(cacheKey, persisted.Price, TimeSpan.FromMinutes(15));
+                    return persisted.Price;
+                }
+                if (persisted != null)
+                {
+                    _logger.LogWarning("EOD live fetch failed for {Symbol} and persisted price is stale ({UpdatedAt}); returning null",
+                        symbol, persisted.UpdatedAt);
+                }
             }
 
             return price;
@@ -78,12 +136,16 @@ public class EodPriceProvider : IPriceProvider
         }
     }
 
+    private int _lastHttpStatus;
+    private bool QuotaBlocked => _lastHttpStatus is 401 or 402 or 403 or 429;
+
     private async Task<decimal?> TryGetRealTimePriceAsync(string symbol)
     {
         var url = $"https://eodhistoricaldata.com/api/real-time/{Uri.EscapeDataString(symbol)}?api_token={_apiKey}&fmt=json";
         _logger.LogInformation("EOD REAL-TIME requesting for {Symbol}", symbol);
 
         var response = await _httpClient.GetAsync(url);
+        _lastHttpStatus = (int)response.StatusCode;
         _logger.LogInformation("EOD REAL-TIME response status: {Status} for {Symbol}", response.StatusCode, symbol);
 
         if (!response.IsSuccessStatusCode)
@@ -127,6 +189,7 @@ public class EodPriceProvider : IPriceProvider
         _logger.LogInformation("EOD EOD requesting for {Symbol}", symbol);
 
         var response = await _httpClient.GetAsync(url);
+        _lastHttpStatus = (int)response.StatusCode;
         _logger.LogInformation("EOD EOD response status: {Status} for {Symbol}", response.StatusCode, symbol);
 
         if (!response.IsSuccessStatusCode)
@@ -190,15 +253,10 @@ public class EodPriceProvider : IPriceProvider
 
     private static string DetectCurrency(string symbol)
     {
+        // Only explicit exchange/fund suffixes imply currency. Prefix heuristics
+        // misclassify US tickers like ES, IT, BE, FR...
         if (symbol.EndsWith(".EUFUND", StringComparison.OrdinalIgnoreCase))
             return "EUR";
-
-        if (symbol.Length >= 2)
-        {
-            var prefix = symbol[..2].ToUpperInvariant();
-            if (prefix is "ES" or "LU" or "FR" or "DE" or "IT" or "NL" or "BE" or "AT" or "FI" or "IE" or "PT" or "GR")
-                return "EUR";
-        }
 
         return "USD";
     }

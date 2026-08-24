@@ -3,6 +3,9 @@
     <Project Path="src/PortfolioTracker.Api/PortfolioTracker.Api.csproj" />
     <Project Path="src/PortfolioTracker.Blazor/PortfolioTracker.Blazor.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PortfolioTracker.Tests/PortfolioTracker.Tests.csproj" />
+  </Folder>
   <Project Path="docker-compose.dcproj">
     <Build />
   </Project>

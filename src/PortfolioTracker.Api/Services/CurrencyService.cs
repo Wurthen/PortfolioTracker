@@ -55,7 +55,10 @@ public class CurrencyService
             _logger.LogError(ex, "Error fetching exchange rate");
         }
 
-        return 0.92m;
+        // Cache the fallback briefly so an outage does not trigger one HTTP call per conversion.
+        var fallback = 0.92m;
+        _cache.Set(CacheKey, fallback, TimeSpan.FromMinutes(5));
+        return fallback;
     }
 
     private class ExchangeRateResponse

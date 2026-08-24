@@ -5,22 +5,25 @@ using PortfolioTracker.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddDbContext<PortfolioDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("Default") 
+builder.Services.AddDbContextFactory<PortfolioDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("Default")
         ?? "Host=localhost;Database=portfolio;Username=postgres;Password=postgres"));
 
-builder.Services.AddHttpClient<YahooFinanceService>();
+builder.Services.AddHttpClient<YahooFinanceService>(client =>
+{
+    // Yahoo blocks default UA strings; set once instead of mutating shared headers per call.
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+});
 builder.Services.AddHttpClient<TwelveDataPriceProvider>();
 builder.Services.AddHttpClient<FmpPriceProvider>();
 builder.Services.AddHttpClient<EodPriceProvider>();
-builder.Services.AddScoped<TwelveDataPriceProvider>();
-builder.Services.AddScoped<FmpPriceProvider>();
-builder.Services.AddScoped<EodPriceProvider>();
 builder.Services.AddScoped<SymbolPriceService>();
 builder.Services.AddScoped<CompositePriceProvider>();
 builder.Services.AddScoped<IPriceProvider>(sp => sp.GetRequiredService<CompositePriceProvider>());
 builder.Services.AddScoped<PortfolioService>();
 builder.Services.AddScoped<CurrencyService>();
+builder.Services.AddScoped<TransactionService>();
+builder.Services.AddHttpClient<HistoryBackfillService>();
 builder.Services.AddMemoryCache();
 
 builder.Services.AddCors(options =>
@@ -120,6 +123,47 @@ app.MapGet("/api/portfolio/{userId:guid}/history", async (Guid userId, Portfolio
 {
     var history = await portfolioService.GetHistoryAsync(userId);
     return Results.Ok(history);
+});
+
+app.MapPost("/api/portfolio/{userId:guid}/backfill", async (Guid userId, HistoryBackfillService backfillService) =>
+{
+    var result = await backfillService.BackfillAsync(userId);
+    return Results.Ok(result);
+});
+
+app.MapGet("/api/portfolio/{userId:guid}/transactions", async (Guid userId, TransactionService txService) =>
+{
+    var transactions = await txService.ListAsync(userId);
+    return Results.Ok(transactions);
+});
+
+app.MapGet("/api/portfolio/{userId:guid}/transactions/{itemId:guid}", async (Guid userId, Guid itemId, TransactionService txService) =>
+{
+    var transactions = await txService.ListForItemAsync(userId, itemId);
+    return Results.Ok(transactions);
+});
+
+app.MapPost("/api/portfolio/{userId:guid}/transactions", async (Guid userId, CreateTransactionRequest request, TransactionService txService) =>
+{
+    if (request.Shares <= 0)
+        return Results.BadRequest(new { error = "Shares must be greater than zero." });
+    if (request.Type is not ("Buy" or "Sell"))
+        return Results.BadRequest(new { error = "Type must be Buy or Sell." });
+
+    var tx = await txService.AddAsync(userId, request);
+    return tx == null ? Results.NotFound() : Results.Created($"/api/portfolio/{userId}/transactions", tx);
+});
+
+app.MapPost("/api/portfolio/{userId:guid}/transfers", async (Guid userId, TransferRequest request, TransactionService txService) =>
+{
+    var (ok, error) = await txService.TransferAsync(userId, request);
+    return ok ? Results.Ok() : Results.BadRequest(new { error });
+});
+
+app.MapGet("/api/portfolio/{userId:guid}/performance-detailed", async (Guid userId, TransactionService txService) =>
+{
+    var perf = await txService.ComputeDetailedPerformanceAsync(userId);
+    return Results.Ok(perf);
 });
 
 app.MapGet("/health", () => Results.Ok());

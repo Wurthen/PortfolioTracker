@@ -22,3 +22,10 @@ Thumbs.db
 # NuGet
 packages/
 *.nupkg
+
+# Secrets
+.env
+
+# pdfs
+pdf/
+csv/

@@ -9,9 +9,9 @@ services:
       - postgres
     environment:
       - ConnectionStrings__Default=Host=postgres;Database=portfolio;Username=postgres;Password=postgres
-      - TwelveDataApiKey=b3e8bc7134ad402ab64b7bc6585c4023
-      - FmpApiKey=nOC6v8vCcvbsTKb1lk4Dz8Vak0lP3XrS
-      - EodApiKey=6a7906fedfbc20.46232573
+      - TwelveDataApiKey=${TWELVEDATA_API_KEY:-}
+      - FmpApiKey=${FMP_API_KEY:-}
+      - EodApiKey=${EOD_API_KEY:-}
     networks:
       - portfolio-network
 
@@ -38,6 +38,18 @@ services:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+    networks:
+      - portfolio-network
+   
+  mcp-pandas:
+    build:
+      context: ./mcp-pandas
+      dockerfile: Dockerfile
+    ports:
+      - "8082:8080"
+    volumes:
+      - ./data:/data
+      - ./csv:/csv:ro
     networks:
       - portfolio-network
 

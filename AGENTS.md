@@ -5,12 +5,14 @@
 - Minimal API with Entity Framework Core
 - PostgreSQL via Docker
 - Price providers: Twelve Data → FMP → EOD → persistent cache fallback
+- Tests: xUnit in `tests/PortfolioTracker.Tests` (pure calculators only; no DB tests)
 
 ## Build & Run
 
 ```bash
 # Clean, build, run
 dotnet build PortfolioTracker.slnx
+dotnet test tests/PortfolioTracker.Tests
 dotnet run --project src/PortfolioTracker.Api
 dotnet run --project src/PortfolioTracker.Blazor
 
@@ -18,6 +20,35 @@ dotnet run --project src/PortfolioTracker.Blazor
 docker-compose down
 # Then Clean Solution + Rebuild + F5 from Visual Studio
 ```
+
+Run a single test: `dotnet test tests/PortfolioTracker.Tests --filter "FullyQualifiedName~Xirr"`
+
+## mcp-pandas MCP server
+
+- CSVs to analyze live in `csv/` → mounted read-only at `/csv` inside the `mcp-pandas` container (see `docker-compose.yml`). Pass MCP tool paths like `/csv/<file>.csv`; `./data` stays mounted at `/data`.
+- The running stack is managed by the **Visual Studio** compose project (containers named `dockercompose*-…`, images `*:dev`). To recreate only the MCP service after editing its volumes: `docker compose -p <vs-project-name> up -d --force-recreate --no-deps mcp-pandas`. Running plain `docker compose up` creates a SECOND parallel project and collides on port 8082.
+
+## Secrets
+
+API keys are NOT in the repo. They live in:
+- `.env` (gitignored) — used by docker-compose via `${TWELVEDATA_API_KEY}`, `${FMP_API_KEY}`, `${EOD_API_KEY}`
+- `dotnet user-secrets` on project `src/PortfolioTracker.Api` (`TwelveDataApiKey`, `FmpApiKey`, `EodApiKey`) — for host `dotnet run`
+- CI does not need them (tests are pure units)
+
+Providers: Twelve Data (stocks/ETFs/funds), FMP (stocks), EOD Historical Data (mutual funds, free tier 20 calls/day).
+
+## History, Transactions & Performance
+
+- `PortfolioHistoryPoints`: one row/UTC-day per item + total (`ItemId=Guid.Empty`). Dashboard load **upserts today's row** with live prices (never skip: a backfill may have pre-created forward-filled rows). `POST /api/portfolio/{uid}/backfill` backfills 12m **strictly before today** (EOD funds → adjusted_close EUR native; stocks → TwelveData /eod falling back to Yahoo chart; manual-priced funds → flat line from SymbolPrices). ForwardFill carries last NAV over missing business days.
+- **Backfill replays `PortfolioTransactions`**: provider series are price-per-share, multiplied daily by shares actually held (Buy/Sell/Transfer replay) — historical values match real positions. Backfill calls `EnsureSeededAsync` first; seed lots with real FIFO data (see Importing Fund Lots) for accurate MWR/XIRR.
+- `PortfolioTransactions`: Buy/Sell/TransferIn/TransferOut. Synthetic seed: first transactions query creates one legacy Buy per existing position. Transfers create a linked pair and move weighted-average cost to the destination (v1 approximation; real Spanish traspaso conserves original cost basis).
+- Performance card shows ONE row: **Ponderada** (Modified Dietz with external flows; transfers excluded) + XIRR footer (`GET /performance-detailed`). Do NOT re-add a "Simple" row — the user removed it after it showed nonsense like +1447% on windows full of contributions.
+- **USER RULE**: the "Desde inicio (dd/MM)" period must EXACTLY equal the header's Total Gain/Loss % (total gain ÷ total invested). Enforced in `TransactionService.ComputeDetailedPerformanceAsync` — do not replace it with Dietz for that period.
+- Periods whose window starts before portfolio inception are labeled "Desde inicio"; YTD/1A collapse into one row when identical.
+
+### Fund NAV reality (why "Hoy" can be 0.00%)
+- Mutual-fund NAVs publish once daily (~20:00-22:00 CET). Until tonight's NAV lands, today's stored value equals yesterday's → per-fund "Hoy" = 0.00% is CORRECT, not a bug. Exchange-traded items (BABA, ETFs) move live via TwelveData quotes.
+- UI convention: a Fund whose daily change is exactly 0 renders muted with tooltip "NAV de hoy aún no publicado" (`Home.razor`, Hoy column) so it reads as "pending" instead of broken. Don't remove it or fake movement.
 
 ## Architecture
 
@@ -28,13 +59,17 @@ src/
 │   ├── Services/               # Business logic and price providers
 │   ├── Data/                  # DbContext and migrations
 │   └── Program.cs             # DI, endpoints, middleware
-└── PortfolioTracker.Blazor/   # Blazor Server UI
-    ├── Components/
-    │   ├── Pages/            # Home.razor, etc.
-    │   └── Dialogs/           # AddItemDialog, EditItemDialog
-    ├── Services/              # API client, models
-    └── Program.cs
+├── PortfolioTracker.Blazor/   # Blazor Server UI
+│   ├── Components/
+│   │   ├── Pages/            # Home.razor, etc.
+│   │   └── Dialogs/           # AddItemDialog, EditItemDialog, TransferDialog
+│   ├── Services/              # API client, models
+│   └── Program.cs
+└── tests/
+    └── PortfolioTracker.Tests/ # xUnit, pure calculators (no DB)
 ```
+
+CI: `.github/workflows/ci.yml` runs restore + build + test on push/PR. No keys needed.
 
 ## Price Provider Chain
 
@@ -43,6 +78,7 @@ src/
 2. **FMP** - stocks/ETFs, plan-dependent coverage
 3. **EOD Historical Data** - mutual funds, use `/api/real-time` or `/api/eod`
 4. **Persistent cache** (SymbolPrices table) - last resort fallback
+5. Alt-symbol funds (`PortfolioService` → `EodPriceProvider` directly): **daily cadence gate** — live-fetch each fund at most once per UTC day, plus one evening refresh after 19:00 UTC (when NAVs publish). Otherwise serves the persisted `SymbolPrices` value. HTTP 401/402/403/429 cuts the attempt chain immediately (no suffix/eod retries). Successes persist to SymbolPrices; failures fall back to them only if <7 days old.
 
 ### Currency Handling
 - EOD returns prices in fund's native currency
@@ -70,8 +106,14 @@ src/
 
 | Endpoint | Purpose |
 |----------|---------|
-| `GET /api/portfolio/{userId}/dashboard` | Returns items + performance in **one call** (preferred over separate `/portfolio` + `/performance`). Items sorted by `CurrentValue` desc. Writes the daily snapshot |
-| `GET /api/portfolio/{userId}/history` | Daily value series: `total[]` + per-item map (for charts) |
+| `GET /api/portfolio/{userId}/dashboard` | Items + performance in **one call** (preferred over `/portfolio` + `/performance`). Sorted by `CurrentValue` desc. Writes the daily snapshot |
+| `GET /api/portfolio/{userId}/history` | Daily value series: `total[]` + per-item map (charts) |
+| `POST /api/portfolio/{userId}/backfill` | Backfills 12 months of daily values (idempotent) |
+| `GET /api/portfolio/{userId}/transactions` | Lists ops; first call seeds one synthetic Buy per existing position |
+| `GET /api/portfolio/{userId}/transactions/{itemId}` | Ops for one position |
+| `POST /api/portfolio/{userId}/transactions` | Add Buy/Sell (updates shares + weighted avg) |
+| `POST /api/portfolio/{userId}/transfers` | Linked TransferOut/TransferIn pair between two positions |
+| `GET /api/portfolio/{userId}/performance-detailed` | Modified-Dietz per period ("Desde inicio" forced equal to header Total Gain/Loss %) + XIRR since inception |
 | `GET /api/search?query=` | Search symbols via Yahoo Finance |
 | `POST /api/portfolio` | Add investment (merges if symbol exists for user) |
 | `PUT /api/portfolio/{id}/{userId}` | Update investment |
@@ -108,48 +150,44 @@ Server-side validation on POST/PUT returns **400 with `{ "error": "..." }`** (Sh
 
 6. **Docker Desktop not running** - Everything fails ("Connection refused", daemon pipe errors). Start Docker Desktop first, verify `docker ps` works
 
-## Known Issues (do NOT re-diagnose; fix if touching that code)
+7. **All alt-symbol funds show N/A "no price" at once** - EOD free tier (20 calls/day) exhausted. The daily cadence gate (`EodPriceProvider`) now caps live fetches at ~1/fund/day (+evening refresh), so this should only happen after heavy backfills. Recovery path: `EodPriceProvider` persists successes to `SymbolPrices` and falls back to them (<7 days old); seed missing rows via SQL from latest history values ÷ shares ÷ usdToEur. Quota resets at UTC midnight.
+8. **`DbContext` "second operation started" under parallel price fetching** - price providers must not use the scoped `PortfolioDbContext` from parallel `Task.WhenAll` loops. `SymbolPriceService` uses `IDbContextFactory<PortfolioDbContext>` (short-lived contexts per call); keep it that way for anything new called from provider code.
 
-- `Api/Program.cs`: `AddScoped<TwelveDataPriceProvider>()` etc. override the `AddHttpClient<T>` registrations — the named-client config is dead code
-- `CompositePriceProvider`: `ConcurrentDictionary.GetOrAdd` valueFactory can run twice under contention; a Canceled task hits `throw null!` (NRE); `SavePriceAsync` failure aborts the whole dashboard
-- `CurrencyService`: hardcoded `0.92m` fallback is not cached → retries dead endpoint on every conversion during outages
-- `YahooFinanceService`: mutates shared `_httpClient.DefaultRequestHeaders` per call — not thread-safe under Blazor Server circuits
-- `EodPriceProvider.DetectCurrency`: classifies any symbol starting ES/IT/BE/FR… as EUR (collides with US tickers like `ES`, `IT`)
-- Prices are fetched sequentially per item on every dashboard load — burns EOD free quota (20 calls/day) fast
-- API keys are committed in `appsettings.json` / `docker-compose.yml` — should move to user-secrets/env vars
+## Known Issues
 
-## Configuration
+(Already fixed, don't re-introduce: DI double-registration, CompositePriceProvider races/cancellation NRE, per-call User-Agent mutation, DetectCurrency prefix heuristic, uncached FX fallback, sequential price fetching, committed API keys, backfill using current share counts.)
 
-API keys stored in:
-- `src/PortfolioTracker.Api/appsettings.json` (local)
-- `docker-compose.yml` environment variables (production)
-
-Required keys:
-- `TwelveDataApiKey` - stocks/ETFs/funds (get from https://twelvedata.com)
-- `FmpApiKey` - stocks (get from https://site.financialmodelingprep.com)
-- `EodApiKey` - mutual funds (get from https://eodhistoricaldata.com, free tier: 20 calls/day)
+- Transfers approximate moved shares with source average price (real traspaso conserves original cost basis at destination)
+- TwelveData free plan `/eod` returns only the latest bar — stock history relies on the Yahoo fallback (rate-limit sensitive)
+- EOD fund NAVs publish with a lag (T+1/T+2): recent days may be forward-filled values
+- No realized-gains tracking for Sells yet; no transaction delete/edit UI (API-only)
+- Rotate the leaked API keys at each provider (they were committed before the secrets cleanup)
+- Raw window % ignores contribution timing by definition (windows with big inflows look inflated, e.g. +22% "3M") — that's why the card shows Modified Dietz instead. Do not "simplify" it back to raw change
 
 ## Testing the API
 
 ```bash
 curl http://localhost:8080/health
-curl http://localhost:8080/api/portfolio/12345678-1234-1234-1234-123456789012
+curl http://localhost:8080/api/portfolio/12345678-1234-1234-1234-123456789012/dashboard
 curl "http://localhost:8080/api/search?query=AAPL"
+curl http://localhost:8080/api/portfolio/12345678-1234-1234-1234-123456789012/performance-detailed
 ```
 
 ## Database
 
-- PostgreSQL 16 in Docker
-- EF Core migrations applied on startup via `db.Database.Migrate()`; generate with `dotnet ef migrations add <Name>` from `src/PortfolioTracker.Api`
-- Key tables: `PortfolioItems`, `SymbolPrices`, `PortfolioHistoryPoints`
-- `SymbolPrices` caches last successful price per symbol across providers; rows with `Provider='Manual'` are hand-seeded fallbacks (e.g. `0P0001NCW3` Ábaco) and persist because no live provider ever overwrites them
-- `PortfolioHistoryPoints`: one row per UTC day per item (+ `ItemId=Guid.Empty` = portfolio total), written on the FIRST dashboard load of each day only (unique index `(UserId, ItemId, Date)`)
+- PostgreSQL 16 in Docker; migrations applied on startup via `db.Database.Migrate()`. Generate with `dotnet ef migrations add <Name>` then `dotnet ef database update`, both from `src/PortfolioTracker.Api`
+- Tables: `PortfolioItems` (one row per symbol per user, unique `(UserId, Symbol)`), `SymbolPrices`, `PortfolioHistoryPoints`, `PortfolioTransactions`
+- `SymbolPrices` rows with `Provider='Manual'` are hand-seeded fallbacks (e.g. `0P0001NCW3`) and persist because no live provider ever overwrites them — update via SQL when a manual price must change
+- Dev database has REAL lot transactions seeded for the dev user (39 FIFO rows) — deleting `PortfolioTransactions` and re-running backfill regenerates consistent history
+- Snapshot/history semantics are in "History, Transactions & Performance" above (unique index `(UserId, ItemId, Date)`; totals = `ItemId=Guid.Empty`; today's row is upserted live on every dashboard load)
 
 ## Culture Gotcha (IMPORTANT)
 
-The dev machine runs es-ES culture but the API container runs invariant. NEVER call `decimal.TryParse(str)` without `CultureInfo.InvariantCulture` — `"119.34000"` parses as 11,934,000 under es-ES (dot = group separator). Providers returning string prices (TwelveData/EOD) must always use `NumberStyles.Number + InvariantCulture`. `JsonElement.GetDecimal()` is safe.
+The dev machine runs es-ES culture but the API container runs invariant. NEVER call `decimal.TryParse(str)` without `CultureInfo.InvariantCulture` — `"119.34000"` parses as 11,934,000 under es-ES (dot = group separator). Providers returning string prices (TwelveData/EOD) must always use `NumberStyles.Number + InvariantCulture`. `JsonElement.GetDecimal()` is safe. Regression test exists in `HistoryBackfillParseTests`.
 
 ## Charting
 
-- `Components/PortfolioChart.razor`: dependency-free SVG area chart fed with `List<HistoryPointDto>`; Home.razor filters points client-side by period (1D/1S/1M/3M/6M/YTD/1A)
-- Data accumulates one point/day — charts need days of usage before showing trends
+- `Components/PortfolioChart.razor`: dependency-free SVG area chart fed with `List<HistoryPointDto>`; Home.razor filters points client-side by period (1D/1S/1M/3M/6M/YTD→"Inicio"/1A)
+- **1D shows NO chart** (two points aren't a series): the card shows a big hero % vs last available day, and per-position daily change lives in the main table's "Hoy" column (`DailyByItem` in Home.razor). Don't reintroduce a 1D chart or a separate daily-breakdown list.
+- The YTD button label is dynamic: "Inicio" while all history is inside the current calendar year, "YTD" once pre-January data exists
+- Allocation doughnut (`AllocationChart.razor` + `wwwroot/charts.js`): legend shows fund NAMES (truncated to 30 chars), percentages drawn ON slices by an inline Chart.js plugin (slices <4% unlabeled), tooltip uses full name
