@@ -14,6 +14,7 @@ builder.Services.AddHttpClient<YahooFinanceService>(client =>
     // Yahoo blocks default UA strings; set once instead of mutating shared headers per call.
     client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
 });
+builder.Services.AddHttpClient<AlpacaPriceProvider>();
 builder.Services.AddHttpClient<TwelveDataPriceProvider>();
 builder.Services.AddHttpClient<FmpPriceProvider>();
 builder.Services.AddHttpClient<EodPriceProvider>();

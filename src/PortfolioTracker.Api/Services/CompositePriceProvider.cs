@@ -5,20 +5,24 @@ namespace PortfolioTracker.Api.Services;
 
 public class CompositePriceProvider : IPriceProvider
 {
-    private readonly IPriceProvider[] _providers;
+    private readonly IPriceProvider[] _stockProviders;
+    private readonly IPriceProvider[] _fundProviders;
     private readonly SymbolPriceService _symbolPriceService;
     private readonly ILogger<CompositePriceProvider> _logger;
     private static readonly ConcurrentDictionary<string, Lazy<Task<decimal?>>> _pendingRequests = new();
     public string Name => "Composite";
 
     public CompositePriceProvider(
+        AlpacaPriceProvider alpaca,
         TwelveDataPriceProvider twelveData,
         FmpPriceProvider fmp,
         EodPriceProvider eod,
         SymbolPriceService symbolPriceService,
         ILogger<CompositePriceProvider> logger)
     {
-        _providers = new IPriceProvider[] { twelveData, fmp, eod };
+        // Funds should never hit Alpaca; route them straight to EOD.
+        _stockProviders = new IPriceProvider[] { alpaca, twelveData, fmp, eod };
+        _fundProviders = new IPriceProvider[] { eod };
         _symbolPriceService = symbolPriceService;
         _logger = logger;
     }
@@ -66,7 +70,9 @@ public class CompositePriceProvider : IPriceProvider
     {
         _logger.LogInformation("CompositePriceProvider trying to get price for {Symbol} (normalized: {NormalizedSymbol})", originalSymbol, normalizedSymbol);
 
-        foreach (var provider in _providers)
+        var providers = IsFundSymbol(normalizedSymbol) ? _fundProviders : _stockProviders;
+
+        foreach (var provider in providers)
         {
             decimal? price;
             try
@@ -138,5 +144,16 @@ public class CompositePriceProvider : IPriceProvider
         }
 
         return symbol;
+    }
+
+    private static bool IsFundSymbol(string symbol)
+    {
+        if (symbol.StartsWith("0P", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (symbol.EndsWith(".EUFUND", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return false;
     }
 }

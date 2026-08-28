@@ -12,6 +12,8 @@ services:
       - TwelveDataApiKey=${TWELVEDATA_API_KEY:-}
       - FmpApiKey=${FMP_API_KEY:-}
       - EodApiKey=${EOD_API_KEY:-}
+      - AlpacaApiKey=${ALPACA_API_KEY:-}
+      - AlpacaSecretKey=${ALPACA_SECRET_KEY:-}
     networks:
       - portfolio-network
 
