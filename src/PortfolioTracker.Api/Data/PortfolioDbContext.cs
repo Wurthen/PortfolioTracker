@@ -25,6 +25,8 @@ public class PortfolioDbContext : DbContext
             entity.Property(e => e.PurchasePrice).HasPrecision(18, 4);
             entity.Property(e => e.Commission).HasPrecision(18, 2);
             entity.Property(e => e.AlternativeSymbol).HasMaxLength(50);
+            entity.Property(e => e.SafeBackAmount).HasPrecision(18, 2);
+            entity.Property(e => e.SafeBackShares).HasPrecision(18, 8);
         });
 
         modelBuilder.Entity<SymbolPrice>(entity =>

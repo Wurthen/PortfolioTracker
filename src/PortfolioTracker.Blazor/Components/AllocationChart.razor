@@ -1,8 +1,8 @@
 @inject IJSRuntime JS
 
 <div class="card">
-    <div class="card-header">
-        <h5 class="mb-0">Portfolio Allocation</h5>
+        <div class="card-header">
+        <h5 class="pt-section-title">Distribución</h5>
     </div>
     <div class="card-body">
         @if (Items.Any())
@@ -11,7 +11,7 @@
         }
         else
         {
-            <p class="text-muted text-center">No investments yet</p>
+            <p class="text-muted text-center mb-0">No hay inversiones</p>
         }
     </div>
 </div>
@@ -48,9 +48,9 @@
     {
         var colors = new[]
         {
-            "#0d6efd", "#198754", "#ffc107", "#dc3545", "#6f42c1",
-            "#20c997", "#fd7e14", "#0dcaf0", "#6610f2", "#d63384",
-            "#6c757d", "#adb5bd", "#343a40", "#495057", "#212529"
+            "#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6",
+            "#14b8a6", "#f97316", "#38bdf8", "#6366f1", "#ec4899",
+            "#64748b", "#94a3b8", "#475569", "#334155", "#1e293b"
         };
 
         if (count <= colors.Length)

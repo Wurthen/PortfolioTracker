@@ -1,0 +1,41 @@
+@code {
+    [Parameter]
+    public bool IsVisible { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> IsVisibleChanged { get; set; }
+
+    [Parameter]
+    public string ImportType { get; set; } = "csv";
+
+    private string Title => ImportType.ToLowerInvariant() == "pdf" ? "Subir PDF de broker" : "Importar CSV";
+
+    private string Description => ImportType.ToLowerInvariant() == "pdf"
+        ? "Podrás subir el extracto PDF de tu broker para detectar automáticamente nuevas compras y añadirlas al portfolio actual."
+        : "Podrás importar un archivo CSV para crear o reemplazar un portfolio completo con todas tus posiciones.";
+
+    private async Task Close()
+    {
+        await IsVisibleChanged.InvokeAsync(false);
+    }
+}
+
+<div class="modal fade @(IsVisible ? "show d-block" : "")" tabindex="-1" style="background-color: rgba(0,0,0,0.7);">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">@Title</h5>
+                <button type="button" class="btn-close" @onclick="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info mb-0">
+                    <strong>Próximamente</strong>
+                    <p class="mb-0 mt-2">@Description</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" @onclick="Close">Entendido</button>
+            </div>
+        </div>
+    </div>
+</div>

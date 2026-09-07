@@ -1,7 +1,7 @@
 @inject PortfolioApiService ApiService
 @inject ILogger<TransferDialog> Logger
 
-<div class="modal fade @(IsVisible ? "show d-block" : "")" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+<div class="modal fade @(IsVisible ? "show d-block" : "")" tabindex="-1" style="background-color: rgba(0,0,0,0.7);">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
@@ -10,49 +10,51 @@
             </div>
             <div class="modal-body">
                 <div class="alert alert-info small">
-                    Los traspasos entre fondos de inversi&oacute;n en Espa&ntilde;a no tributan (diferimiento fiscal).
-                    El importe se mueve &iacute;ntegro del fondo origen al destino.
+                    Los traspasos entre fondos de inversión en España no tributan (diferimiento fiscal).
+                    El importe se mueve íntegro del fondo origen al destino.
                 </div>
 
-                <div class="mb-3">
-                    <label class="form-label">Fondo origen</label>
-                    <select class="form-select" @bind="FromItemId">
-                        <option value="">Seleccionar...</option>
-                        @foreach (var item in Items)
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Fondo origen</label>
+                        <select class="form-select" @bind="FromItemId">
+                            <option value="">Seleccionar...</option>
+                            @foreach (var item in Items)
+                            {
+                                <option value="@item.Id">@item.Name (@item.Symbol) - @item.CurrentValue.ToString("N2") €</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Fondo destino</label>
+                        <select class="form-select" @bind="ToItemId">
+                            <option value="">Seleccionar...</option>
+                            @foreach (var item in Items)
+                            {
+                                <option value="@item.Id">@item.Name (@item.Symbol)</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Importe (€)</label>
+                        <input type="number" class="form-control" @bind="AmountEur" step="0.01" min="0.01" />
+                        @if (FromItem != null)
                         {
-                            <option value="@item.Id">@item.Name (@item.Symbol) - @item.CurrentValue.ToString("N2") &euro;</option>
+                            <small class="text-muted">Máximo: @FromItem.CurrentValue.ToString("N2") €</small>
                         }
-                    </select>
-                </div>
-
-                <div class="mb-3">
-                    <label class="form-label">Fondo destino</label>
-                    <select class="form-select" @bind="ToItemId">
-                        <option value="">Seleccionar...</option>
-                        @foreach (var item in Items)
-                        {
-                            <option value="@item.Id">@item.Name (@item.Symbol)</option>
-                        }
-                    </select>
-                </div>
-
-                <div class="mb-3">
-                    <label class="form-label">Importe (&euro;)</label>
-                    <input type="number" class="form-control" @bind="AmountEur" step="0.01" min="0.01" />
-                    @if (FromItem != null)
-                    {
-                        <small class="text-muted">M&aacute;ximo: @FromItem.CurrentValue.ToString("N2") &euro;</small>
-                    }
-                </div>
-
-                <div class="mb-3">
-                    <label class="form-label">Fecha</label>
-                    <input type="date" class="form-control" @bind="Date" />
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Fecha</label>
+                        <input type="date" class="form-control" @bind="Date" />
+                    </div>
                 </div>
 
                 @if (HasError)
                 {
-                    <div class="alert alert-danger">@ErrorMessage</div>
+                    <div class="alert alert-danger mb-0">@ErrorMessage</div>
                 }
             </div>
             <div class="modal-footer">

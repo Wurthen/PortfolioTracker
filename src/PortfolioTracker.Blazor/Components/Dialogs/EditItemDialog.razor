@@ -1,10 +1,10 @@
 @inject PortfolioApiService ApiService
 
-<div class="modal fade @(IsVisible ? "show d-block" : "")" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+<div class="modal fade @(IsVisible ? "show d-block" : "")" tabindex="-1" style="background-color: rgba(0,0,0,0.7);">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Edit Investment</h5>
+                <h5 class="modal-title">Editar inversión</h5>
                 <button type="button" class="btn-close" @onclick="Close"></button>
             </div>
             <div class="modal-body">
@@ -15,49 +15,51 @@
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label">Name</label>
-                    <input type="text" class="form-control" @bind="Name" maxlength="200" placeholder="e.g. Amundi Index MSCI World SRI" />
+                    <label class="form-label">Nombre</label>
+                    <input type="text" class="form-control" @bind="Name" maxlength="200" placeholder="p. ej. Amundi Index MSCI World SRI" />
                 </div>
 
-                <div class="mb-3">
-                    <label class="form-label">Shares</label>
-                    <input type="number" class="form-control" @bind="Shares" step="0.0001" min="0.0001" />
-                </div>
-
-                <div class="mb-3">
-                    <label class="form-label">Purchase Price (per share)</label>
-                    <div class="input-group">
-                        <span class="input-group-text">€</span>
-                        <input type="number" class="form-control" @bind="PurchasePrice" step="0.0001" min="0.01" />
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Participaciones</label>
+                        <input type="number" class="form-control" @bind="Shares" step="0.0001" min="0.0001" />
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Precio de compra</label>
+                        <div class="input-group">
+                            <span class="input-group-text">€</span>
+                            <input type="number" class="form-control" @bind="PurchasePrice" step="0.0001" min="0.01" />
+                        </div>
                     </div>
                 </div>
 
-                <div class="mb-3">
-                    <label class="form-label">Purchase Date (optional)</label>
-                    <input type="date" class="form-control" @bind="PurchaseDate" />
-                </div>
-
-                <div class="mb-3">
-                    <label class="form-label">Commission (€)</label>
-                    <div class="input-group">
-                        <span class="input-group-text">€</span>
-                        <input type="number" class="form-control" @bind="Commission" step="0.01" min="0" />
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Fecha de compra (opcional)</label>
+                        <input type="date" class="form-control" @bind="PurchaseDate" />
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Comisión (€)</label>
+                        <div class="input-group">
+                            <span class="input-group-text">€</span>
+                            <input type="number" class="form-control" @bind="Commission" step="0.01" min="0" />
+                        </div>
                     </div>
                 </div>
 
                 @if (IsFund)
                 {
-                    <div class="alert alert-light border">
-                        <h6 class="mb-2">Fund Symbol Mapping</h6>
+                    <div class="alert alert-secondary">
+                        <h6 class="mb-2">Mapeo de símbolo de fondo</h6>
                         <div class="mb-2">
-                            <label class="form-label">Alternative Symbol (optional)</label>
-                            <input type="text" class="form-control" @bind="AlternativeSymbol" maxlength="50" placeholder="e.g. LU0840158819.EUFUND" />
-                            <small class="text-muted">Some funds are listed under a different symbol on data providers like EOD.</small>
+                            <label class="form-label">Símbolo alternativo (opcional)</label>
+                            <input type="text" class="form-control" @bind="AlternativeSymbol" maxlength="50" placeholder="p. ej. LU0840158819.EUFUND" />
+                            <small class="text-muted">Algunos fondos cotizan con un símbolo distinto en proveedores como EOD.</small>
                         </div>
                         <div class="form-check">
                             <input class="form-check-input" type="checkbox" @bind="UseAlternativeSymbol" id="useAltSymbol" />
                             <label class="form-check-label" for="useAltSymbol">
-                                Use alternative symbol for price lookup
+                                Usar símbolo alternativo para precios
                             </label>
                         </div>
                     </div>
@@ -69,7 +71,7 @@
                 }
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" @onclick="Close">Cancel</button>
+                <button type="button" class="btn btn-secondary" @onclick="Close">Cancelar</button>
                 <button type="button" class="btn btn-primary" @onclick="Save" disabled="@IsSaving">
                     @if (IsSaving)
                     {
@@ -77,7 +79,7 @@
                     }
                     else
                     {
-                        <span>Save Changes</span>
+                        <span>Guardar cambios</span>
                     }
                 </button>
             </div>
@@ -135,14 +137,14 @@
         if (Item == null || Shares <= 0 || PurchasePrice <= 0)
         {
             HasError = true;
-            ErrorMessage = "Please fill all required fields.";
+            ErrorMessage = "Rellena todos los campos obligatorios.";
             return;
         }
 
         if (string.IsNullOrWhiteSpace(Name))
         {
             HasError = true;
-            ErrorMessage = "Name is required.";
+            ErrorMessage = "El nombre es obligatorio.";
             return;
         }
 
@@ -171,7 +173,7 @@
             else
             {
                 HasError = true;
-                ErrorMessage = "Failed to update investment.";
+                ErrorMessage = "No se pudo actualizar la inversión.";
             }
         }
         catch (Exception ex)

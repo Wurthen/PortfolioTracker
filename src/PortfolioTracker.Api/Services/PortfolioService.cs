@@ -77,6 +77,8 @@ public class PortfolioService
             Commission = item.Commission,
             AlternativeSymbol = item.AlternativeSymbol,
             UseAlternativeSymbol = item.UseAlternativeSymbol,
+            SafeBackAmount = item.SafeBackAmount,
+            SafeBackShares = item.SafeBackShares,
             PriceAvailable = priceAvailable,
             CurrentPriceUsd = currentPriceUsd ?? 0,
             CurrentPrice = currentPriceEur,
@@ -105,9 +107,25 @@ public class PortfolioService
         return dtos.ToList();
     }
 
+    internal static string NormalizeSymbol(string symbol)
+    {
+        var normalized = symbol.ToUpperInvariant();
+        // Mutual-fund symbols from Yahoo start with 0P and may carry an exchange suffix
+        // (e.g. 0P0000X09U.F). Strip the suffix so the same fund always maps to one row.
+        if (normalized.StartsWith("0P", StringComparison.OrdinalIgnoreCase))
+        {
+            var dotIndex = normalized.LastIndexOf('.');
+            if (dotIndex > 0)
+            {
+                return normalized[..dotIndex];
+            }
+        }
+        return normalized;
+    }
+
     public async Task<PortfolioItemDto?> AddItemAsync(CreatePortfolioItemRequest request)
     {
-        var normalizedSymbol = request.Symbol.ToUpperInvariant();
+        var normalizedSymbol = NormalizeSymbol(request.Symbol);
         var existingItem = await _context.PortfolioItems
             .FirstOrDefaultAsync(p => p.UserId == request.UserId && p.Symbol == normalizedSymbol);
 
@@ -123,7 +141,7 @@ public class PortfolioService
 
             if (request.PurchaseDate.HasValue)
             {
-                existingItem.PurchaseDate = request.PurchaseDate;
+                existingItem.PurchaseDate = DateTime.SpecifyKind(request.PurchaseDate.Value, DateTimeKind.Utc);
             }
 
             await _context.SaveChangesAsync();

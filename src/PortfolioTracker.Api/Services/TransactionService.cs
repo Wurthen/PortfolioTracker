@@ -17,6 +17,13 @@ public class CreateTransactionRequest
     public decimal Commission { get; set; }
 }
 
+public class CreateSafeBackRequest
+{
+    public Guid ItemId { get; set; }
+    public DateTime? Date { get; set; }
+    public decimal AmountEur { get; set; }
+}
+
 public class TransferRequest
 {
     public Guid FromItemId { get; set; }
@@ -55,11 +62,15 @@ public class DetailedPerformanceDto
 public class TransactionService
 {
     private readonly PortfolioDbContext _context;
+    private readonly YahooFinanceService _yahooFinanceService;
+    private readonly CurrencyService _currencyService;
     private readonly ILogger<TransactionService> _logger;
 
-    public TransactionService(PortfolioDbContext context, ILogger<TransactionService> logger)
+    public TransactionService(PortfolioDbContext context, YahooFinanceService yahooFinanceService, CurrencyService currencyService, ILogger<TransactionService> logger)
     {
         _context = context;
+        _yahooFinanceService = yahooFinanceService;
+        _currencyService = currencyService;
         _logger = logger;
     }
 
@@ -161,6 +172,59 @@ public class TransactionService
 
         var result = await Project(_context.PortfolioTransactions.Where(t => t.Id == tx.Id)).ToListAsync();
         return result.FirstOrDefault();
+    }
+
+    public async Task<TransactionDto?> AddSafeBackAsync(Guid userId, CreateSafeBackRequest request)
+    {
+        if (request.AmountEur <= 0)
+            return null;
+
+        var item = await _context.PortfolioItems
+            .FirstOrDefaultAsync(p => p.Id == request.ItemId && p.UserId == userId);
+        if (item == null)
+            return null;
+
+        var usdToEur = await _currencyService.GetUsdToEurRateAsync();
+        var currentPriceUsd = await _yahooFinanceService.GetCurrentPriceAsync(
+            item.UseAlternativeSymbol && !string.IsNullOrWhiteSpace(item.AlternativeSymbol)
+                ? item.AlternativeSymbol
+                : item.Symbol);
+        if (!currentPriceUsd.HasValue || currentPriceUsd.Value <= 0 || usdToEur <= 0)
+            return null;
+
+        var currentPriceEur = currentPriceUsd.Value * usdToEur;
+        var shares = request.AmountEur / currentPriceEur;
+        if (shares <= 0)
+            return null;
+
+        var date = DateTime.SpecifyKind((request.Date ?? DateTime.UtcNow).Date, DateTimeKind.Utc);
+
+        var tx = new PortfolioTransaction
+        {
+            UserId = userId,
+            ItemId = item.Id,
+            Type = "SafeBack",
+            Date = date,
+            Shares = decimal.Round(shares, 8, MidpointRounding.AwayFromZero),
+            AmountEur = decimal.Round(request.AmountEur, 2),
+            Commission = 0
+        };
+
+        // SafeBack is cash that buys shares at market price: treat it like a Buy for the position,
+        // but track the cash received separately as SafeBack income.
+        var totalShares = item.Shares + tx.Shares;
+        var totalCost = item.Shares * item.PurchasePrice + tx.AmountEur;
+        item.PurchasePrice = totalShares > 0 ? totalCost / totalShares : 0;
+        item.Shares = totalShares;
+        item.SafeBackAmount += tx.AmountEur;
+        item.SafeBackShares += tx.Shares;
+        item.UpdatedAt = DateTime.UtcNow;
+
+        _context.PortfolioTransactions.Add(tx);
+        await _context.SaveChangesAsync();
+
+        var dtoResult = await Project(_context.PortfolioTransactions.Where(t => t.Id == tx.Id)).ToListAsync();
+        return dtoResult.FirstOrDefault();
     }
 
     public async Task<(bool Ok, string Error)> TransferAsync(Guid userId, TransferRequest request)

@@ -49,7 +49,7 @@ window.updateAllocationChart = function (labels, data, colors, fullNames) {
                 data: data,
                 backgroundColor: colors,
                 borderWidth: 2,
-                borderColor: '#fff'
+                borderColor: '#151e32'
             }]
         },
         options: {
@@ -61,12 +61,20 @@ window.updateAllocationChart = function (labels, data, colors, fullNames) {
                     labels: {
                         padding: 12,
                         boxWidth: 14,
+                        color: '#94a3b8',
                         font: {
-                            size: 11
+                            size: 11,
+                            family: "Inter, system-ui, sans-serif"
                         }
                     }
                 },
                 tooltip: {
+                    backgroundColor: '#151e32',
+                    titleColor: '#f1f5f9',
+                    bodyColor: '#f1f5f9',
+                    borderColor: '#2a3b55',
+                    borderWidth: 1,
+                    padding: 12,
                     callbacks: {
                         label: function (context) {
                             const name = (fullNames && fullNames[context.dataIndex]) || context.label || '';

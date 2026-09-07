@@ -1,0 +1,40 @@
+<div class="dropdown">
+    <button class="btn pt-nav-btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+        <span class="oi oi-data-transfer-upload"></span>
+        <span>Importar</span>
+    </button>
+    <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end">
+        <li>
+            <button class="dropdown-item d-flex align-items-center gap-2" @onclick="RequestCsvImport">
+                <span class="oi oi-spreadsheet text-success"></span>
+                <div>
+                    <div class="fw-medium">Importar CSV</div>
+                    <small class="text-muted d-block">Cargar portfolio completo</small>
+                </div>
+            </button>
+        </li>
+        <li><hr class="dropdown-divider"></li>
+        <li>
+            <button class="dropdown-item d-flex align-items-center gap-2" @onclick="RequestPdfImport">
+                <span class="oi oi-document text-info"></span>
+                <div>
+                    <div class="fw-medium">Subir PDF de broker</div>
+                    <small class="text-muted d-block">Añadir nuevas compras</small>
+                </div>
+            </button>
+        </li>
+    </ul>
+</div>
+
+@code {
+    [Parameter]
+    public EventCallback<string> OnImportRequested { get; set; }
+
+    private async Task RequestCsvImport() => await RequestImport("csv");
+    private async Task RequestPdfImport() => await RequestImport("pdf");
+
+    private async Task RequestImport(string type)
+    {
+        await OnImportRequested.InvokeAsync(type);
+    }
+}

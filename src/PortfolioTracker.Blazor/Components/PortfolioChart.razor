@@ -5,12 +5,12 @@
 {
     <div class="text-center text-muted py-5">
         <span class="oi oi-graph"></span>
-        <p class="mt-2 mb-0">Todav&iacute;a no hay datos suficientes. Se guarda un valor por d&iacute;a cada vez que abres la app.</p>
+        <p class="mt-2 mb-0">Todavía no hay datos suficientes. Se guarda un valor por día cada vez que abres la app.</p>
     </div>
 }
 else
 {
-    <svg viewBox="0 0 800 280" style="width:100%;height:auto;" role="img" aria-label="Evoluci&oacute;n del valor de la cartera">
+    <svg viewBox="0 0 800 280" style="width:100%;height:auto;" role="img" aria-label="Evolución del valor de la cartera">
         <defs>
             <linearGradient id="area-@(Uid)" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stop-color="@StrokeColor" stop-opacity="0.35" />
@@ -21,7 +21,7 @@ else
         @foreach (var y in GridLinesY)
         {
             <line x1="@PadL" y1="@y.ToString(Invariant)" x2="@(W - PadR)" y2="@y.ToString(Invariant)"
-                  stroke="#e9ecef" stroke-width="1" />
+                  stroke="#334155" stroke-width="1" />
         }
 
         <path d="@AreaPath" fill="url(#area-@(Uid))" />
@@ -36,16 +36,16 @@ else
             foreach (var p in PlotPoints)
             {
                 <circle cx="@p.X.ToString(Invariant)" cy="@p.Y.ToString(Invariant)" r="7" fill="transparent">
-                    <title>@p.Date.ToString("dd/MM/yyyy"): @p.Value.ToString("N2") &euro;</title>
+                    <title>@p.Date.ToString("dd/MM/yyyy"): @p.Value.ToString("N2") €</title>
                 </circle>
             }
         }
 
         <text x="@LastX.ToString(Invariant)" y="@((LastY - 14).ToString(Invariant))" text-anchor="middle"
-              font-size="15" font-weight="600" fill="@StrokeColor">@LastValue.ToString("N2") &euro;</text>
+              font-size="15" font-weight="600" fill="@StrokeColor" font-family="Inter, system-ui, sans-serif">@LastValue.ToString("N2") €</text>
 
-        <text x="@PadL" y="@(H - 6)" font-size="12" fill="#6c757d">@FirstDate</text>
-        <text x="@(W - PadR)" y="@(H - 6)" text-anchor="end" font-size="12" fill="#6c757d">@LastDate</text>
+        <text x="@PadL" y="@(H - 6)" font-size="12" fill="#94a3b8" font-family="Inter, system-ui, sans-serif">@FirstDate</text>
+        <text x="@(W - PadR)" y="@(H - 6)" text-anchor="end" font-size="12" fill="#94a3b8" font-family="Inter, system-ui, sans-serif">@LastDate</text>
     </svg>
 }
 
@@ -124,7 +124,7 @@ else
         LastValue = last.Value;
         FirstDate = data[0].Date.ToString("dd/MM/yy");
         LastDate = data[^1].Date.ToString("dd/MM/yy");
-        StrokeColor = last.Value >= data[0].Value ? "#198754" : "#dc3545";
+        StrokeColor = last.Value >= data[0].Value ? "#22c55e" : "#ef4444";
 
         GridLinesY = Enumerable.Range(1, 3).Select(i => PadT + i * (H - PadT - PadB) / 4.0);
     }

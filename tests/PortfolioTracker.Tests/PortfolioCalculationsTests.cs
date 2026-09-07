@@ -48,6 +48,29 @@ public class PortfolioServiceTests
         var avg = PortfolioService.ComputeWeightedAveragePrice(existingShares, existingAvg, addShares, addCost);
         Assert.Equal(expected, avg);
     }
+
+    [Theory]
+    [InlineData("aapl", "AAPL")]
+    [InlineData("0P0000X09U.F", "0P0000X09U")]
+    [InlineData("0p0000x09u.de", "0P0000X09U")]
+    [InlineData("MSCIWORLD", "MSCIWORLD")]
+    public void NormalizeSymbol_MapsFundsConsistently(string input, string expected)
+    {
+        Assert.Equal(expected, PortfolioService.NormalizeSymbol(input));
+    }
+
+    [Fact]
+    public void MapToDto_IncludesSafeBackFields()
+    {
+        var item = MakeItem();
+        item.SafeBackAmount = 25.50m;
+        item.SafeBackShares = 0.75m;
+
+        var dto = PortfolioService.MapToDto(item, currentPriceUsd: 100m, usdToEur: 0.9m);
+
+        Assert.Equal(25.50m, dto.SafeBackAmount);
+        Assert.Equal(0.75m, dto.SafeBackShares);
+    }
 }
 
 public class HistoryBackfillParseTests

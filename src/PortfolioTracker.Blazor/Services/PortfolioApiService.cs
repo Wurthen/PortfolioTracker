@@ -111,6 +111,19 @@ public class PortfolioApiService
         catch { return (false, $"Error ({(int)response.StatusCode})."); }
     }
 
+    public async Task<(bool Ok, string Error)> AddSafeBackAsync(Guid userId, CreateSafeBackRequest request)
+    {
+        var response = await Client.PostAsJsonAsync($"/api/portfolio/{userId}/safeback", request);
+        if (response.IsSuccessStatusCode)
+            return (true, "");
+        try
+        {
+            var err = await response.Content.ReadFromJsonAsync<ApiErrorResponse>();
+            return (false, err?.Error ?? "Error al registrar SafeBack.");
+        }
+        catch { return (false, $"Error ({(int)response.StatusCode})."); }
+    }
+
     public async Task<DetailedPerformanceDto?> GetDetailedPerformanceAsync(Guid userId)
     {
         try

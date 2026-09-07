@@ -12,6 +12,8 @@ public class PortfolioItemDto
     public decimal Commission { get; set; }
     public string? AlternativeSymbol { get; set; }
     public bool UseAlternativeSymbol { get; set; }
+    public decimal SafeBackAmount { get; set; }
+    public decimal SafeBackShares { get; set; }
     public bool PriceAvailable { get; set; } = true;
     public decimal CurrentPriceUsd { get; set; }
     public decimal CurrentPrice { get; set; }
@@ -121,6 +123,13 @@ public class TransferRequest
     public Guid ToItemId { get; set; }
     public decimal AmountEur { get; set; }
     public DateTime? Date { get; set; }
+}
+
+public class CreateSafeBackRequest
+{
+    public Guid ItemId { get; set; }
+    public DateTime? Date { get; set; }
+    public decimal AmountEur { get; set; }
 }
 
 public class PeriodPerformanceDto

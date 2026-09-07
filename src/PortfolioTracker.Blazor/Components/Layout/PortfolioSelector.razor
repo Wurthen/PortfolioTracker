@@ -1,0 +1,39 @@
+<div class="dropdown">
+    <button class="btn pt-portfolio-select dropdown-toggle d-flex align-items-center gap-2" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+        <span class="oi oi-grid-three-up text-primary"></span>
+        <span>Mi portfolio</span>
+    </button>
+    <ul class="dropdown-menu dropdown-menu-dark">
+        <li>
+            <button class="dropdown-item d-flex align-items-center gap-2 @(SelectedPortfolio == "default" ? "active" : "")" @onclick="SelectDefaultPortfolio">
+                <span class="oi oi-grid-three-up"></span>
+                Mi portfolio
+            </button>
+        </li>
+        <li><hr class="dropdown-divider"></li>
+        <li>
+            <button class="dropdown-item d-flex align-items-center gap-2 text-muted" disabled>
+                <span class="oi oi-plus"></span>
+                Nuevo portfolio (próximamente)
+            </button>
+        </li>
+    </ul>
+</div>
+
+@code {
+    [Parameter]
+    public EventCallback<string> OnSelectionChanged { get; set; }
+
+    private string SelectedPortfolio { get; set; } = "default";
+
+    private async Task SelectDefaultPortfolio()
+    {
+        await SelectPortfolio("default");
+    }
+
+    private async Task SelectPortfolio(string value)
+    {
+        SelectedPortfolio = value;
+        await OnSelectionChanged.InvokeAsync(value);
+    }
+}

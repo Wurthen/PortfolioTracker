@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Microsoft.EntityFrameworkCore;
 
 namespace PortfolioTracker.Api.Models;
 
@@ -34,6 +35,12 @@ public class PortfolioItem
     public string? AlternativeSymbol { get; set; }
 
     public bool UseAlternativeSymbol { get; set; }
+
+    [Precision(18, 2)]
+    public decimal SafeBackAmount { get; set; }
+
+    [Precision(18, 8)]
+    public decimal SafeBackShares { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

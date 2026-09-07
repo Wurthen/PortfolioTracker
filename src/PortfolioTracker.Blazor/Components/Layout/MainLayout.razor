@@ -1,21 +1,47 @@
 ﻿@inherits LayoutComponentBase
 
 <div class="page">
-    <main>
-        <nav class="navbar navbar-dark bg-primary shadow-sm">
-            <div class="container-fluid">
-                <span class="navbar-brand mb-0 h1">Portfolio Tracker</span>
+    <header class="pt-header">
+        <div class="d-flex align-items-center justify-content-between">
+            <div class="d-flex align-items-center gap-4">
+                <a href="/" class="pt-brand text-decoration-none">
+                    <span class="pt-brand-mark">PT</span>
+                    <span>Portfolio Tracker</span>
+                </a>
+                <PortfolioSelector />
             </div>
-        </nav>
+            <div class="d-flex align-items-center gap-3">
+                <ImportButton OnImportRequested="ShowImportPlaceholder" />
+                <div class="d-flex align-items-center gap-2 px-2 py-1 rounded" style="background-color: var(--pt-bg); border: 1px solid var(--pt-border);">
+                    <span class="oi oi-person text-muted"></span>
+                    <span class="small text-muted">Dev user</span>
+                </div>
+            </div>
+        </div>
+    </header>
 
-        <article class="content px-4 py-3">
+    <main>
+        <article class="content px-4 py-4">
             @Body
         </article>
     </main>
 </div>
+
+<ImportDialog @bind-IsVisible="showImportDialog" ImportType="@importType" />
 
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
     <a href="." class="reload">Reload</a>
     <span class="dismiss">🗙</span>
 </div>
+
+@code {
+    private bool showImportDialog = false;
+    private string importType = "csv";
+
+    private void ShowImportPlaceholder(string type)
+    {
+        importType = type;
+        showImportDialog = true;
+    }
+}

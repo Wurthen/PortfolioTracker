@@ -1,0 +1,149 @@
+@inject PortfolioApiService ApiService
+
+<div class="modal fade @(IsVisible ? "show d-block" : "")" tabindex="-1" style="background-color: rgba(0,0,0,0.7);">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Registrar SafeBack</h5>
+                <button type="button" class="btn-close" @onclick="Close"></button>
+            </div>
+            <div class="modal-body">
+                @if (Item != null)
+                {
+                    <div class="alert alert-info">
+                        <strong>@Item.Symbol</strong> - @Item.Name
+                        @if (Item.SafeBackAmount > 0)
+                        {
+                            <div class="small mt-1">SafeBack acumulado: <strong>@Item.SafeBackAmount.ToString("N2") €</strong></div>
+                        }
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Fecha</label>
+                            <input type="date" class="form-control" @bind="Date" />
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Importe recibido (€)</label>
+                            <div class="input-group">
+                                <span class="input-group-text">€</span>
+                                <input type="number" class="form-control" @bind="AmountEur" step="0.01" min="0.01" />
+                            </div>
+                        </div>
+                    </div>
+                    <small class="text-muted d-block">Trade Republic te da este importe en efectivo, que se reinvierte automáticamente en participaciones de @Item.Symbol al precio actual.</small>
+                }
+
+                @if (HasError)
+                {
+                    <div class="alert alert-danger mt-3 mb-0">@ErrorMessage</div>
+                }
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" @onclick="Close">Cancelar</button>
+                <button type="button" class="btn btn-primary" @onclick="Save" disabled="@IsSaving">
+                    @if (IsSaving)
+                    {
+                        <span class="spinner-border spinner-border-sm"></span>
+                    }
+                    else
+                    {
+                        <span>Registrar</span>
+                    }
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public bool IsVisible { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> IsVisibleChanged { get; set; }
+
+    [Parameter]
+    public Guid UserId { get; set; }
+
+    [Parameter]
+    public PortfolioItemDto? Item { get; set; }
+
+    [Parameter]
+    public EventCallback OnSafeBackAdded { get; set; }
+
+    private DateTime? Date { get; set; }
+    private decimal AmountEur { get; set; }
+    private bool IsSaving { get; set; }
+    private bool HasError { get; set; }
+    private string ErrorMessage { get; set; } = "";
+
+    private Guid? _lastItemId;
+
+    protected override void OnParametersSet()
+    {
+        if (Item != null && Item.Id != _lastItemId)
+        {
+            _lastItemId = Item.Id;
+            Date = DateTime.Today;
+            AmountEur = 0;
+            HasError = false;
+            ErrorMessage = "";
+        }
+    }
+
+    private async Task Save()
+    {
+        if (Item == null || AmountEur <= 0)
+        {
+            HasError = true;
+            ErrorMessage = "Introduce un importe mayor que cero.";
+            return;
+        }
+
+        IsSaving = true;
+        HasError = false;
+
+        try
+        {
+            var request = new CreateSafeBackRequest
+            {
+                ItemId = Item.Id,
+                Date = Date,
+                AmountEur = AmountEur
+            };
+
+            var (ok, error) = await ApiService.AddSafeBackAsync(UserId, request);
+            if (ok)
+            {
+                await OnSafeBackAdded.InvokeAsync();
+                await Close();
+            }
+            else
+            {
+                HasError = true;
+                ErrorMessage = error;
+            }
+        }
+        catch (Exception ex)
+        {
+            HasError = true;
+            ErrorMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            IsSaving = false;
+        }
+    }
+
+    private async Task Close()
+    {
+        Date = null;
+        AmountEur = 0;
+        IsSaving = false;
+        HasError = false;
+        ErrorMessage = "";
+        _lastItemId = null;
+        await IsVisibleChanged.InvokeAsync(false);
+    }
+}

@@ -1,110 +1,143 @@
 @inject PortfolioApiService ApiService
 @inject IJSRuntime JS
 
-<div class="modal fade @(IsVisible ? "show d-block" : "")" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+<div class="modal fade @(IsVisible ? "show d-block" : "")" tabindex="-1" style="background-color: rgba(0,0,0,0.7);">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Add New Investment</h5>
+                <h5 class="modal-title">@(SymbolSelected ? "Añadir compra" : "Nueva inversión")</h5>
                 <button type="button" class="btn-close" @onclick="Close"></button>
             </div>
             <div class="modal-body">
                 @if (!SymbolSelected)
                 {
-                    <div class="mb-3">
-                        <label class="form-label">Search Symbol</label>
-                        <div class="input-group">
-                            <input type="text" class="form-control" @bind="SearchQuery" @bind:event="oninput" placeholder="e.g. AAPL, MSCIWORLD, BABA" />
-                            <button class="btn btn-primary" @onclick="Search" disabled="@IsSearching">
-                                @if (IsSearching)
-                                {
-                                    <span class="spinner-border spinner-border-sm"></span>
-                                }
-                                else
-                                {
-                                    <span>Search</span>
-                                }
-                            </button>
-                        </div>
+                    <div class="btn-group w-100 mb-3" role="group">
+                        <button type="button" class="btn @(IsNewMode ? "btn-primary" : "btn-outline-primary")" @onclick="() => SelectMode(true)">Nueva inversión</button>
+                        <button type="button" class="btn @(!IsNewMode ? "btn-primary" : "btn-outline-primary")" @onclick="() => SelectMode(false)">Añadir a existente</button>
                     </div>
 
-                    @if (SearchResults != null)
+                    @if (IsNewMode)
                     {
-                        <div class="list-group">
-                            @foreach (var result in SearchResults)
-                            {
-                                <button class="list-group-item list-group-item-action" @onclick="() => SelectSymbol(result)">
-                                    <strong>@result.Symbol</strong> - @result.Name
-                                    <small class="text-muted">(@result.Type)</small>
+                        <div class="mb-3">
+                            <label class="form-label">Buscar símbolo</label>
+                            <div class="input-group">
+                                <input type="text" class="form-control" @bind="SearchQuery" @bind:event="oninput" placeholder="p. ej. AAPL, MSCIWORLD, BABA" />
+                                <button class="btn btn-primary" @onclick="Search" disabled="@IsSearching">
+                                    @if (IsSearching)
+                                    {
+                                        <span class="spinner-border spinner-border-sm"></span>
+                                    }
+                                    else
+                                    {
+                                        <span>Buscar</span>
+                                    }
                                 </button>
-                            }
+                            </div>
+                            <small class="text-muted">También puedes buscar por ISIN.</small>
                         </div>
-                    }
 
-                    @if (NoResults)
+                        @if (SearchResults != null)
+                        {
+                            <div class="list-group">
+                                @foreach (var result in SearchResults)
+                                {
+                                    <button class="list-group-item list-group-item-action" @onclick="() => SelectSymbol(result)">
+                                        <strong>@result.Symbol</strong> - @result.Name
+                                        <small class="text-muted">(@result.Type)</small>
+                                    </button>
+                                }
+                            </div>
+                        }
+
+                        @if (NoResults)
+                        {
+                            <div class="alert alert-warning mt-3">No se encontraron resultados para "@SearchQuery"</div>
+                        }
+                    }
+                    else
                     {
-                        <div class="alert alert-warning mt-3">No results found for "@SearchQuery"</div>
+                        <div class="mb-3">
+                            <label class="form-label">Inversión existente</label>
+                            <select class="form-select" @bind="SelectedExistingItemId">
+                                <option value="">Seleccionar inversión...</option>
+                                @foreach (var existing in ExistingItems)
+                                {
+                                    <option value="@existing.Id">@existing.Symbol - @existing.Name</option>
+                                }
+                            </select>
+                        </div>
+
+                        @if (SelectedExistingItem != null)
+                        {
+                            <button class="btn btn-primary w-100" @onclick="SelectExisting">
+                                Continuar con @SelectedExistingItem.Symbol
+                            </button>
+                        }
                     }
                 }
                 else
                 {
-                    <div class="alert alert-info">
-                        <strong>@SelectedSymbol?.Symbol</strong> - @SelectedSymbol?.Name
-                        <button class="btn btn-sm btn-link" @onclick="ChangeSymbol">Change</button>
+                    <div class="alert alert-info d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>@SelectedSymbol?.Symbol</strong> - @SelectedSymbol?.Name
+                        </div>
+                        <button class="btn btn-sm btn-link" @onclick="ChangeSymbol">Cambiar</button>
                     </div>
 
-                    <div class="mb-3">
-                        <label class="form-label">Shares</label>
-                        <input type="number" class="form-control" @bind="Shares" step="0.0001" min="0.0001" />
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label">Purchase Price (per share)</label>
-                        <div class="input-group">
-                            <span class="input-group-text">€</span>
-                            <input type="number" class="form-control" @bind="PurchasePrice" step="0.0001" min="0.01" />
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Participaciones</label>
+                            <input type="number" class="form-control" @bind="Shares" step="0.0001" min="0.0001" />
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Precio de compra</label>
+                            <div class="input-group">
+                                <span class="input-group-text">€</span>
+                                <input type="number" class="form-control" @bind="PurchasePrice" step="0.0001" min="0.01" />
+                            </div>
                         </div>
                     </div>
 
-                    <div class="mb-3">
-                        <label class="form-label">Purchase Date (optional)</label>
-                        <input type="date" class="form-control" @bind="PurchaseDate" />
-                    </div>
-
-                <div class="mb-3">
-                    <label class="form-label">Commission (€)</label>
-                    <div class="input-group">
-                        <span class="input-group-text">€</span>
-                        <input type="number" class="form-control" @bind="Commission" step="0.01" min="0" />
-                    </div>
-                </div>
-
-                @if (IsFund)
-                {
-                    <div class="alert alert-light border">
-                        <h6 class="mb-2">Fund Symbol Mapping</h6>
-                        <div class="mb-2">
-                            <label class="form-label">Alternative Symbol (optional)</label>
-                            <input type="text" class="form-control" @bind="AlternativeSymbol" maxlength="50" placeholder="e.g. LU0840158819.EUFUND" />
-                            <small class="text-muted">Some funds are listed under a different symbol on data providers like EOD.</small>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Fecha de compra (opcional)</label>
+                            <input type="date" class="form-control" @bind="PurchaseDate" />
                         </div>
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" @bind="UseAlternativeSymbol" id="useAltSymbolAdd" />
-                            <label class="form-check-label" for="useAltSymbolAdd">
-                                Use alternative symbol for price lookup
-                            </label>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Comisión (€)</label>
+                            <div class="input-group">
+                                <span class="input-group-text">€</span>
+                                <input type="number" class="form-control" @bind="Commission" step="0.01" min="0" />
+                            </div>
                         </div>
                     </div>
-                }
 
-                @if (HasError)
-                {
-                    <div class="alert alert-danger">@ErrorMessage</div>
-                }
+                    @if (IsFund)
+                    {
+                        <div class="alert alert-secondary">
+                            <h6 class="mb-2">Mapeo de símbolo de fondo</h6>
+                            <div class="mb-2">
+                                <label class="form-label">Símbolo alternativo (opcional)</label>
+                                <input type="text" class="form-control" @bind="AlternativeSymbol" maxlength="50" placeholder="p. ej. LU0840158819.EUFUND" />
+                                <small class="text-muted">Algunos fondos cotizan con un símbolo distinto en proveedores como EOD.</small>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" @bind="UseAlternativeSymbol" id="useAltSymbolAdd" />
+                                <label class="form-check-label" for="useAltSymbolAdd">
+                                    Usar símbolo alternativo para precios
+                                </label>
+                            </div>
+                        </div>
+                    }
+
+                    @if (HasError)
+                    {
+                        <div class="alert alert-danger">@ErrorMessage</div>
+                    }
                 }
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" @onclick="Close">Cancel</button>
+                <button type="button" class="btn btn-secondary" @onclick="Close">Cancelar</button>
                 @if (SymbolSelected)
                 {
                     <button type="button" class="btn btn-primary" @onclick="Save" disabled="@IsSaving">
@@ -114,7 +147,7 @@
                         }
                         else
                         {
-                            <span>Add Investment</span>
+                            <span>Añadir inversión</span>
                         }
                     </button>
                 }
@@ -134,6 +167,12 @@
     public Guid UserId { get; set; }
 
     [Parameter]
+    public List<PortfolioItemDto> ExistingItems { get; set; } = [];
+
+    [Parameter]
+    public Guid? PreselectedExistingItemId { get; set; }
+
+    [Parameter]
     public EventCallback OnItemAdded { get; set; }
 
     private bool SymbolSelected => SelectedSymbol != null;
@@ -142,6 +181,9 @@
     private bool NoResults { get; set; }
     private List<SearchResultDto>? SearchResults { get; set; }
     private SearchResultDto? SelectedSymbol { get; set; }
+    private string SelectedExistingItemId { get; set; } = "";
+    private PortfolioItemDto? SelectedExistingItem => ExistingItems.FirstOrDefault(i => i.Id.ToString() == SelectedExistingItemId);
+    private bool IsNewMode { get; set; } = true;
     private decimal Shares { get; set; }
     private decimal PurchasePrice { get; set; }
     private DateTime? PurchaseDate { get; set; }
@@ -195,12 +237,46 @@
         SearchQuery = "";
     }
 
+    private void SelectMode(bool isNew)
+    {
+        IsNewMode = isNew;
+        HasError = false;
+        ErrorMessage = "";
+    }
+
+    private void SelectExisting()
+    {
+        var existing = SelectedExistingItem;
+        if (existing == null)
+            return;
+
+        SelectedSymbol = new SearchResultDto
+        {
+            Symbol = existing.Symbol,
+            Name = existing.Name,
+            Type = existing.Type
+        };
+        AlternativeSymbol = existing.AlternativeSymbol;
+        UseAlternativeSymbol = existing.UseAlternativeSymbol;
+    }
+
+    public override async Task SetParametersAsync(ParameterView parameters)
+    {
+        await base.SetParametersAsync(parameters);
+
+        if (PreselectedExistingItemId.HasValue && PreselectedExistingItemId.Value != Guid.Empty)
+        {
+            IsNewMode = false;
+            SelectedExistingItemId = PreselectedExistingItemId.Value.ToString();
+        }
+    }
+
     private async Task Save()
     {
         if (SelectedSymbol == null || Shares <= 0 || PurchasePrice <= 0)
         {
             HasError = true;
-            ErrorMessage = "Please fill all required fields.";
+            ErrorMessage = "Rellena todos los campos obligatorios.";
             return;
         }
 
@@ -232,7 +308,7 @@
             else
             {
                 HasError = true;
-                ErrorMessage = "Failed to add investment.";
+                ErrorMessage = "No se pudo añadir la inversión.";
             }
         }
         catch (Exception ex)
@@ -253,6 +329,8 @@
         NoResults = false;
         SearchResults = null;
         SelectedSymbol = null;
+        SelectedExistingItemId = "";
+        IsNewMode = true;
         Shares = 0;
         PurchasePrice = 0;
         PurchaseDate = null;

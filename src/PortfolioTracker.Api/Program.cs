@@ -155,6 +155,15 @@ app.MapPost("/api/portfolio/{userId:guid}/transactions", async (Guid userId, Cre
     return tx == null ? Results.NotFound() : Results.Created($"/api/portfolio/{userId}/transactions", tx);
 });
 
+app.MapPost("/api/portfolio/{userId:guid}/safeback", async (Guid userId, CreateSafeBackRequest request, TransactionService txService) =>
+{
+    if (request.AmountEur <= 0)
+        return Results.BadRequest(new { error = "Amount must be greater than zero." });
+
+    var tx = await txService.AddSafeBackAsync(userId, request);
+    return tx == null ? Results.BadRequest(new { error = "Could not register SafeBack. Verify the item exists and has a current price." }) : Results.Created($"/api/portfolio/{userId}/transactions", tx);
+});
+
 app.MapPost("/api/portfolio/{userId:guid}/transfers", async (Guid userId, TransferRequest request, TransactionService txService) =>
 {
     var (ok, error) = await txService.TransferAsync(userId, request);

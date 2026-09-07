@@ -7,251 +7,298 @@
 
 <PageTitle>My Portfolio</PageTitle>
 
-<div class="container-fluid py-4">
+<div class="container-fluid py-2">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="h2 mb-0">My Portfolio</h1>
+        <div>
+            <h1 class="h3 mb-0 fw-bold">Dashboard</h1>
+            <p class="text-muted mb-0 small">Resumen de tu cartera</p>
+        </div>
         <div class="d-flex gap-2">
-            <button class="btn btn-outline-secondary" @onclick='() => showTransferDialog = true'>
-                <span class="oi oi-loop-square me-1"></span>
-                Traspaso
+            <button class="btn pt-nav-btn" @onclick='() => showTransferDialog = true'>
+                <span class="oi oi-loop-square"></span>
+                <span class="d-none d-sm-inline">Traspaso</span>
             </button>
             <button class="btn btn-primary" @onclick="ShowAddDialog">
-                <span class="oi oi-plus me-1"></span>
-                Add Investment
+                <span class="oi oi-plus"></span>
+                Añadir inversión
             </button>
         </div>
     </div>
 
     @if (IsLoading)
     {
-        <div class="text-center py-5">
-            <div class="spinner-border text-primary" role="status"></div>
-            <p class="mt-2 text-muted">Loading...</p>
+        <div class="d-flex flex-column align-items-center justify-content-center py-5">
+            <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;"></div>
+            <p class="mt-3 text-muted">Cargando cartera...</p>
         </div>
     }
     else if (PortfolioItems.Count == 0)
     {
-        <div class="text-center py-5 bg-light rounded">
-            <p class="text-muted mb-3">Your portfolio is empty</p>
-            <button class="btn btn-primary" @onclick="ShowAddDialog">Add your first investment</button>
+        <div class="pt-empty-state">
+            <div class="pt-empty-state-icon">
+                <span class="oi oi-bar-chart"></span>
+            </div>
+            <h4 class="h5 mb-2">Tu cartera está vacía</h4>
+            <p class="text-muted mb-4">Empieza añadiendo tu primera inversión para ver el rendimiento.</p>
+            <button class="btn btn-primary btn-lg" @onclick="ShowAddDialog">
+                <span class="oi oi-plus me-1"></span>
+                Añadir primera inversión
+            </button>
         </div>
     }
     else
     {
-        <div class="row mb-4">
-            <div class="col-md-8">
-                <div class="card mb-4">
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-3">
-                                <small class="text-muted">Total Value</small>
-                                <div class="h4 mb-0 text-success">@TotalValue.ToString("N2") €</div>
-                            </div>
-                            <div class="col-md-3">
-                                <small class="text-muted">Total Gain/Loss</small>
-                                <div class="h4 mb-0 @TotalGainLossClass">@TotalGainLoss.ToString("N2") €</div>
-                            </div>
-                            <div class="col-md-3">
-                                <small class="text-muted">Total Gain/Loss %</small>
-                                <div class="h4 mb-0 @TotalGainLossClass">@TotalGainLossPercent.ToString("F2")%</div>
-                            </div>
-                            <div class="col-md-3">
-                                <small class="text-muted">Investments</small>
-                                <div class="h4 mb-0">@PortfolioItems.Count</div>
-                            </div>
-                        </div>
+        <div class="row g-4 mb-4">
+            <div class="col-xl-3 col-md-6">
+                <div class="pt-kpi-card h-100">
+                    <div class="pt-kpi-label">Valor total</div>
+                    <div class="pt-kpi-value">@TotalValue.ToString("N2") €</div>
+                    <div class="pt-kpi-sub">@PortfolioItems.Count posiciones</div>
+                </div>
+            </div>
+            <div class="col-xl-3 col-md-6">
+                <div class="pt-kpi-card h-100">
+                    <div class="pt-kpi-label">Ganancia / Pérdida</div>
+                    <div class="pt-kpi-value @TotalGainLossClass">@TotalGainLoss.ToString("+#,##0.00;-#,##0.00;0.00") €</div>
+                    <div class="pt-kpi-sub @TotalGainLossClass">@TotalGainLossPercent.ToString("F2")%</div>
+                </div>
+            </div>
+            <div class="col-xl-3 col-md-6">
+                <div class="pt-kpi-card h-100">
+                    <div class="pt-kpi-label">Rentabilidad anualizada</div>
+                    <div class="pt-kpi-value @(DetailedPerf?.XirrSinceInceptionPct is { } xirr ? GetGainLossClass(xirr) : "text-muted")">
+                        @(DetailedPerf?.XirrSinceInceptionPct is { } xirrValue ? $"{xirrValue:F2}%" : "—")
+                    </div>
+                    <div class="pt-kpi-sub">TIR (XIRR) desde inicio</div>
+                </div>
+            </div>
+            <div class="col-xl-3 col-md-6">
+                <div class="pt-kpi-card h-100">
+                    <div class="pt-kpi-label">Mejor posición</div>
+                    <div class="pt-kpi-value text-success">
+                        @(SortedItems.Any() ? SortedItems.OrderByDescending(i => i.GainLossPercent).First().Name : "—")
+                    </div>
+                    <div class="pt-kpi-sub">
+                        @(SortedItems.Any() ? $"{SortedItems.OrderByDescending(i => i.GainLossPercent).First().GainLossPercent:F2}%" : "")
                     </div>
                 </div>
+            </div>
+        </div>
 
-                @if (Performance != null)
-                {
-                    <div class="card mb-4">
-                        <div class="card-header d-flex justify-content-between align-items-center">
-                            <h5 class="mb-0">Rentabilidad</h5>
-                            <small class="text-muted" title="Modificada por el momento y cuant&iacute;a de tus aportaciones (M&eacute;todo Dietz). Los traspasos entre fondos no cuentan como aportaci&oacute;n.">ponderada por aportaciones</small>
-                        </div>
-                        <div class="card-body">
-                            <table class="table table-sm table-borderless mb-0 text-center align-middle">
-                                <tbody>
-                                    <tr>
-                                        @foreach (var p in PerfPeriods)
-                                        {
-                                            <td>
-                                                @if (p.MwrPct.HasValue)
-                                                {
-                                                    <span class="h5 fw-bold @GetGainLossClass(p.MwrPct.Value)">@p.MwrPct.Value.ToString("+0.00;-0.00;0.00")%</span>
-                                                }
-                                                else
-                                                {
-                                                    <span class="h5 text-muted">&mdash;</span>
-                                                }
-                                                <small class="text-muted d-block">@p.Label</small>
-                                            </td>
-                                        }
-                                    </tr>
-                                </tbody>
-                            </table>
-                            @if (DetailedPerf?.XirrSinceInceptionPct is { } xirr)
-                            {
-                                <hr class="my-2" />
-                                <div class="text-end small pe-2">
-                                    <span class="text-muted">TIR (XIRR) desde inicio:</span>
-                                    <span class="fw-bold @GetGainLossClass(xirr)">@xirr.ToString("+0.00;-0.00;0.00")%</span>
-                                    <span class="text-muted ms-1" title="Rentabilidad anualizada ponderada por aportaciones">(anualizada)</span>
+        @if (DetailedPerf?.Periods is { Count: > 0 })
+        {
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="pt-section-title">Rentabilidad por periodo</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3 text-center">
+                        @foreach (var p in PerfPeriods)
+                        {
+                            <div class="col-6 col-md-4 col-lg">
+                                <div class="p-2 rounded" style="background-color: var(--pt-bg);">
+                                    <div class="small text-muted mb-1">@p.Label</div>
+                                    @if (p.MwrPct.HasValue)
+                                    {
+                                        <div class="h5 fw-bold mb-0 @GetGainLossClass(p.MwrPct.Value)">@p.MwrPct.Value.ToString("+0.00;-0.00;0.00")%</div>
+                                    }
+                                    else
+                                    {
+                                        <div class="h5 text-muted mb-0">—</div>
+                                    }
                                 </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+
+        <div class="row g-4 mb-4">
+            <div class="col-lg-8">
+                <div class="card h-100">
+                    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-3">
+                        <h5 class="pt-section-title">Evolución del valor</h5>
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            @if (History == null || History.Total.Count < 2)
+                            {
+                                <button type="button" class="btn btn-sm btn-outline-info" @onclick="RunBackfill" disabled="@isBackfilling">
+                                    @if (isBackfilling)
+                                    {
+                                        <span class="spinner-border spinner-border-sm me-1"></span>
+                                    }
+                                    Cargar histórico 12m
+                                </button>
                             }
+                            <div class="btn-group" role="group">
+                                @foreach (var period in Periods)
+                                {
+                                    <button type="button" class="btn pt-period-btn @(SelectedPeriod == period.Key ? "active" : "btn-outline-secondary")"
+                                            @onclick="() => SelectPeriod(period.Key)">
+                                        @(period.Key == "ytd" ? YtdLabel : period.Label)
+                                    </button>
+                                }
+                            </div>
                         </div>
                     </div>
-                }
+                    <div class="card-body">
+                        @if (History != null)
+                        {
+                            <div class="d-flex align-items-center gap-3 mb-4">
+                                <span class="display-5 fw-bold lh-1 @GetGainLossClass(PeriodChangePercent)">
+                                    @(FilteredTotalPoints.Count >= 2 ? $"{PeriodChangePercent.ToString("+0.00;-0.00;0.00")}%" : "—")
+                                </span>
+                                <div class="small">
+                                    <div class="fw-semibold">@PerfLabelForPeriod en el periodo</div>
+                                    <div class="text-muted">
+                                        @if (FilteredTotalPoints.Count >= 2)
+                                        {
+                                            @($"{PeriodChangeEur.ToString("+#,##0.00;-#,##0.00;0.00")}")
+                                            @:€
+                                        }
+                                        else
+                                        {
+                                            @:Sin datos
+                                        }
+                                    </div>
+                                </div>
+                                <span class="ms-auto text-muted small">@PeriodRangeText</span>
+                            </div>
+
+                            @if (SelectedPeriod == "1d")
+                            {
+                                <p class="text-muted small mb-0">
+                                    Desglose diario por posición en la columna <strong>Hoy</strong> de la tabla inferior.
+                                </p>
+                            }
+                            else
+                            {
+                                <PortfolioChart Points="FilteredTotalPoints" />
+                            }
+                        }
+                        else
+                        {
+                            <div class="text-center text-muted py-5">
+                                <span class="oi oi-graph" style="font-size: 2rem;"></span>
+                                <p class="mt-2 mb-0">No hay datos históricos disponibles.</p>
+                            </div>
+                        }
+                    </div>
+                </div>
             </div>
-            <div class="col-md-4">
+            <div class="col-lg-4">
                 <AllocationChart Items="PortfolioItems" />
             </div>
         </div>
 
-        <div class="card mb-4">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">Evoluci&oacute;n del valor</h5>
-                <div class="d-flex align-items-center gap-2">
-                    @if (History == null || History.Total.Count < 2)
-                    {
-                        <button type="button" class="btn btn-sm btn-outline-info" @onclick="RunBackfill" disabled="@isBackfilling">
-                            @if (isBackfilling)
-                            {
-                                <span class="spinner-border spinner-border-sm me-1"></span>
-                            }
-                            Cargar hist&oacute;rico 12m
-                        </button>
-                    }
-                    <div class="btn-group btn-group-sm" role="group">
-                    @foreach (var period in Periods)
-                    {
-                        <button type="button" class="btn @(SelectedPeriod == period.Key ? "btn-primary" : "btn-outline-secondary")"
-                                @onclick="() => SelectPeriod(period.Key)">
-                            @(period.Key == "ytd" ? YtdLabel : period.Label)
-                        </button>
-                    }
-                    </div>
-                </div>
+        <div class="card">
+            <div class="card-header">
+                <h5 class="pt-section-title">Posiciones</h5>
             </div>
-            <div class="card-body">
-                @if (History != null)
-                {
-                    <div class="d-flex align-items-center gap-3 mb-3">
-                        <span class="display-5 fw-bold lh-1 @GetGainLossClass(PeriodChangePercent)">
-                            @(FilteredTotalPoints.Count >= 2 ? $"{PeriodChangePercent.ToString("+0.00;-0.00;0.00")}%" : "&mdash;")
-                        </span>
-                        <div class="small">
-                            <div class="fw-semibold">@PerfLabelForPeriod en el periodo</div>
-                            <div class="text-muted">
-                                @if (FilteredTotalPoints.Count >= 2)
-                                {
-                                    @($"{PeriodChangeEur.ToString("+#,##0.00;-#,##0.00;0.00")}")
-                                    @:&euro;
-                                }
-                                else
-                                {
-                                    @:Sin datos
-                                }
-                            </div>
-                        </div>
-                        <span class="ms-auto text-muted small">@PeriodRangeText</span>
-                    </div>
-
-                    @if (SelectedPeriod == "1d")
-                    {
-                        <p class="text-muted small mb-0">
-                            Desglose diario por posici&oacute;n en la columna <strong>Hoy</strong> de la tabla inferior.
-                        </p>
-                    }
-                    else
-                    {
-                        <PortfolioChart Points="FilteredTotalPoints" />
-                    }
-                }
-            </div>
-        </div>
-
-        <div class="table-responsive">
-            <table class="table table-hover">
-                <thead class="table-light">
-                    <tr>
-                        <th><span role="button" class="user-select-none" style="cursor:pointer" @onclick='() => ToggleSort("Name")'>Posici&oacute;n @SortIcon("Name")</span></th>
-                        <th class="text-end"><span role="button" class="user-select-none" style="cursor:pointer" @onclick='() => ToggleSort("CurrentValue")'>Valor actual @SortIcon("CurrentValue")</span></th>
-                        <th class="text-end">Hoy</th>
-                        <th class="text-end"><span role="button" class="user-select-none" style="cursor:pointer" @onclick='() => ToggleSort("GainLoss")'>Gain/Loss @SortIcon("GainLoss")</span></th>
-                        <th class="text-end"><span role="button" class="user-select-none" style="cursor:pointer" @onclick='() => ToggleSort("GainLossPercent")'>Gain/Loss % @SortIcon("GainLossPercent")</span></th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var item in SortedItems)
-                    {
-                        <tr>
-                            <td>
-                                <strong>@item.Name</strong>
-                                <small class="text-muted ms-1">@item.Symbol</small>
-                                @if (item.UseAlternativeSymbol)
-                                {
-                                    <span class="badge bg-info ms-1" title="Using alternative symbol @item.AlternativeSymbol">A</span>
-                                }
-                            </td>
-                            @if (item.PriceAvailable)
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th><span role="button" class="user-select-none" style="cursor:pointer" @onclick='() => ToggleSort("Name")'>Posición @SortIcon("Name")</span></th>
+                                <th class="text-end"><span role="button" class="user-select-none" style="cursor:pointer" @onclick='() => ToggleSort("CurrentValue")'>Valor actual @SortIcon("CurrentValue")</span></th>
+                                <th class="text-end">Hoy</th>
+                                <th class="text-end"><span role="button" class="user-select-none" style="cursor:pointer" @onclick='() => ToggleSort("GainLoss")'>Ganancia @SortIcon("GainLoss")</span></th>
+                                <th class="text-end"><span role="button" class="user-select-none" style="cursor:pointer" @onclick='() => ToggleSort("GainLossPercent")'>Ganancia % @SortIcon("GainLossPercent")</span></th>
+                                <th class="text-end" style="width: 60px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var item in SortedItems)
                             {
-                                var daily = DailyByItem.GetValueOrDefault(item.Id);
-                                <td class="text-end">@item.CurrentValue.ToString("N2") €</td>
-                                <td class="text-end">
-                                    @if (daily != null && daily.HasData)
+                                <tr>
+                                    <td>
+                                        <div class="d-flex align-items-center gap-2">
+                                            <div class="rounded d-flex align-items-center justify-content-center" style="width: 2.25rem; height: 2.25rem; background-color: var(--pt-primary-subtle); color: var(--pt-primary);">
+                                                <span class="oi oi-graph" style="font-size: 0.875rem;"></span>
+                                            </div>
+                                            <div>
+                                                <div class="fw-semibold">@item.Name</div>
+                                                <div class="small text-muted">
+                                                    @item.Symbol
+                                                    @if (item.UseAlternativeSymbol)
+                                                    {
+                                                        <span class="badge bg-info ms-1" title="Usando símbolo alternativo @item.AlternativeSymbol">A</span>
+                                                    }
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    @if (item.PriceAvailable)
                                     {
-                                        @if (daily.ChangePct!.Value == 0 && item.Type.Equals("Fund", StringComparison.OrdinalIgnoreCase))
-                                        {
-                                            <span class="text-muted" title="El NAV de hoy a&uacute;n no se ha publicado (~20:00-22:00). Se actualizar&aacute; autom&aacute;ticamente.">0.00%</span>
-                                            <small class="text-muted d-block">@daily.ChangeEur!.Value.ToString("+#,##0.00;-#,##0.00;0.00") €</small>
-                                        }
-                                        else
-                                        {
-                                            <span class="fw-bold @GetGainLossClass(daily.ChangePct!.Value)">@daily.ChangePct.Value.ToString("+0.00;-0.00;0.00")%</span>
-                                            <small class="text-muted d-block">@daily.ChangeEur!.Value.ToString("+#,##0.00;-#,##0.00;0.00") €</small>
-                                        }
+                                        var daily = DailyByItem.GetValueOrDefault(item.Id);
+                                        <td class="text-end align-middle">@item.CurrentValue.ToString("N2") €</td>
+                                        <td class="text-end align-middle">
+                                            @if (daily != null && daily.HasData)
+                                            {
+                                                @if (daily.ChangePct!.Value == 0 && item.Type.Equals("Fund", StringComparison.OrdinalIgnoreCase))
+                                                {
+                                                    <span class="text-muted" title="El NAV de hoy aún no se ha publicado (~20:00-22:00). Se actualizará automáticamente.">0.00%</span>
+                                                    <small class="text-muted d-block">@daily.ChangeEur!.Value.ToString("+#,##0.00;-#,##0.00;0.00") €</small>
+                                                }
+                                                else
+                                                {
+                                                    <span class="fw-bold @GetGainLossClass(daily.ChangePct!.Value)">@daily.ChangePct.Value.ToString("+0.00;-0.00;0.00")%</span>
+                                                    <small class="text-muted d-block">@daily.ChangeEur!.Value.ToString("+#,##0.00;-#,##0.00;0.00") €</small>
+                                                }
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">—</span>
+                                            }
+                                        </td>
+                                        <td class="text-end align-middle @GetGainLossClass(item.GainLoss)">@item.GainLoss.ToString("N2") €</td>
+                                        <td class="text-end align-middle @GetGainLossClass(item.GainLossPercent)">@item.GainLossPercent.ToString("F2")%</td>
                                     }
                                     else
                                     {
-                                        <span class="text-muted">&mdash;</span>
+                                        <td class="text-end align-middle text-muted">@item.CurrentValue.ToString("N2") €</td>
+                                        <td class="text-end align-middle text-muted" colspan="3" title="Price unavailable: no provider returned a price for this symbol.">
+                                            N/A <span class="badge bg-warning text-dark ms-1">no price</span>
+                                        </td>
                                     }
-                                </td>
-                                <td class="text-end @GetGainLossClass(item.GainLoss)">@item.GainLoss.ToString("N2") €</td>
-                                <td class="text-end @GetGainLossClass(item.GainLossPercent)">@item.GainLossPercent.ToString("F2")%</td>
+                                    <td class="text-end align-middle">
+                                        <div class="dropdown pt-action-menu">
+                                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                                <span class="oi oi-menu"></span>
+                                            </button>
+                                            <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end">
+                                                <li><button class="dropdown-item" @onclick="() => ShowDetail(item)"><span class="oi oi-graph me-2"></span>Ver evolución</button></li>
+                                                <li><button class="dropdown-item" @onclick="() => ShowAddToExistingDialog(item)"><span class="oi oi-plus me-2"></span>Añadir compra</button></li>
+                                                <li><button class="dropdown-item" @onclick="() => ShowSafeBackDialog(item)"><span class="oi oi-loop-circular me-2"></span>SafeBack</button></li>
+                                                <li><button class="dropdown-item" @onclick="() => ShowEditDialog(item)"><span class="oi oi-pencil me-2"></span>Editar</button></li>
+                                                <li><hr class="dropdown-divider"></li>
+                                                <li><button class="dropdown-item text-danger" @onclick="() => ConfirmDelete(item)"><span class="oi oi-trash me-2"></span>Eliminar</button></li>
+                                            </ul>
+                                        </div>
+                                    </td>
+                                </tr>
                             }
-                            else
-                            {
-                                <td class="text-end text-muted">@item.CurrentValue.ToString("N2") €</td>
-                                <td class="text-end text-muted" colspan="3" title="Price unavailable: no provider returned a price for this symbol.">
-                                    N/A <span class="badge bg-warning text-dark ms-1">no price</span>
-                                </td>
-                            }
-                            <td class="text-end">
-                                <button class="btn btn-sm btn-outline-secondary me-1" title="Ver evolución" @onclick="() => ShowDetail(item)">
-                                    <span class="oi oi-graph"></span>
-                                </button>
-                                <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => ShowEditDialog(item)">
-                                    <span class="oi oi-pencil"></span>
-                                </button>
-                                <button class="btn btn-sm btn-outline-danger" @onclick="() => ConfirmDelete(item)">
-                                    <span class="oi oi-trash"></span>
-                                </button>
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     }
 </div>
 
 <AddItemDialog 
     @bind-IsVisible="showAddDialog" 
-    UserId="UserIdService.UserId" 
+    UserId="UserIdService.UserId"
+    ExistingItems="PortfolioItems"
+    PreselectedExistingItemId="addToExistingItemId"
     OnItemAdded="RefreshPortfolio" />
+
+<SafeBackDialog
+    @bind-IsVisible="showSafeBackDialog"
+    UserId="UserIdService.UserId"
+    Item="safeBackItem"
+    OnSafeBackAdded="RefreshPortfolio" />
 
 <EditItemDialog 
     @bind-IsVisible="showEditDialog" 
@@ -271,7 +318,7 @@
         ? s
         : new List<HistoryPointDto>();
     var weight = TotalValue > 0 ? detailItem.CurrentValue / TotalValue * 100 : 0;
-    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.7);">
         <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header">
@@ -286,7 +333,7 @@
                         Precio actual:
                         @if (detailItem.PriceAvailable)
                         {
-                            <text>$@detailItem.CurrentPriceUsd.ToString("N4") &middot; @detailItem.CurrentPrice.ToString("N4") &euro;</text>
+                            <text>$@detailItem.CurrentPriceUsd.ToString("N4") · @detailItem.CurrentPrice.ToString("N4") €</text>
                         }
                         else
                         {
@@ -297,53 +344,62 @@
                             <span class="ms-2">ISIN EOD: @detailItem.AlternativeSymbol</span>
                         }
                     </div>
-                    <div class="row text-center mb-3">
-                        <div class="col">
+                    <div class="row text-center mb-3 g-3">
+                        <div class="col-6 col-md">
                             <small class="text-muted d-block">Valor actual</small>
                             <span class="fw-bold">@(detailItem.PriceAvailable ? detailItem.CurrentValue.ToString("N2") + " €" : "N/A")</span>
                         </div>
-                        <div class="col">
+                        <div class="col-6 col-md">
                             <small class="text-muted d-block">Peso en cartera</small>
                             <span class="fw-bold">@weight.ToString("F1")%</span>
                         </div>
-                        <div class="col">
+                        <div class="col-6 col-md">
                             <small class="text-muted d-block">Ganancia</small>
                             <span class="fw-bold @GetGainLossClass(detailItem.GainLoss)">
                                 @(detailItem.PriceAvailable ? $"{detailItem.GainLoss:N2} € ({detailItem.GainLossPercent:F2}%)" : "N/A")
                             </span>
                         </div>
-                        <div class="col">
+                        <div class="col-6 col-md">
                             <small class="text-muted d-block">Participaciones</small>
                             <span class="fw-bold">@detailItem.Shares.ToString("N4")</span>
                         </div>
-                        <div class="col">
+                        <div class="col-6 col-md">
                             <small class="text-muted d-block">Precio medio</small>
                             <span class="fw-bold">@detailItem.PurchasePrice.ToString("N4") €</span>
                         </div>
+                        @if (detailItem.SafeBackAmount > 0)
+                        {
+                            <div class="col-6 col-md">
+                                <small class="text-muted d-block">SafeBack acumulado</small>
+                                <span class="fw-bold text-info">@detailItem.SafeBackAmount.ToString("N2") €</span>
+                            </div>
+                        }
                     </div>
                     <PortfolioChart Points="series" />
 
                     <h6 class="mt-4 mb-2">Operaciones</h6>
                     @if (itemTransactions.Count > 0)
                     {
-                        <table class="table table-sm table-striped mb-0">
-                            <thead>
-                                <tr>
-                                    <th>Fecha</th><th>Tipo</th><th class="text-end">Participaciones</th><th class="text-end">Importe</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach (var tx in itemTransactions)
-                                {
+                        <div class="table-responsive">
+                            <table class="table table-sm table-striped mb-0">
+                                <thead>
                                     <tr>
-                                        <td>@tx.Date.ToString("dd/MM/yyyy")</td>
-                                        <td>@TxTypeLabel(tx.Type)</td>
-                                        <td class="text-end">@tx.Shares.ToString("N4")</td>
-                                        <td class="text-end">@tx.AmountEur.ToString("N2") €</td>
+                                        <th>Fecha</th><th>Tipo</th><th class="text-end">Participaciones</th><th class="text-end">Importe</th>
                                     </tr>
-                                }
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody>
+                                    @foreach (var tx in itemTransactions)
+                                    {
+                                        <tr>
+                                            <td>@tx.Date.ToString("dd/MM/yyyy")</td>
+                                            <td>@TxTypeLabel(tx.Type)</td>
+                                            <td class="text-end">@tx.Shares.ToString("N4")</td>
+                                            <td class="text-end">@tx.AmountEur.ToString("N2") €</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
                     }
                     else
                     {
@@ -360,18 +416,19 @@
 
 @if (showDeleteConfirm && itemToDelete != null)
 {
-    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.7);">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Delete Investment</h5>
+                    <h5 class="modal-title">Eliminar inversión</h5>
                     <button type="button" class="btn-close" @onclick="CancelDelete"></button>
                 </div>
                 <div class="modal-body">
-                    <p>Are you sure you want to delete <strong>@itemToDelete.Symbol</strong> from your portfolio?</p>
+                    <p>¿Seguro que quieres eliminar <strong>@itemToDelete.Symbol</strong> de tu cartera?</p>
+                    <p class="text-muted small mb-0">Esta acción no se puede deshacer.</p>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" @onclick="CancelDelete">Cancel</button>
+                    <button type="button" class="btn btn-secondary" @onclick="CancelDelete">Cancelar</button>
                     <button type="button" class="btn btn-danger" @onclick="DeleteItem" disabled="@isDeleting">
                         @if (isDeleting)
                         {
@@ -379,7 +436,7 @@
                         }
                         else
                         {
-                            <span>Delete</span>
+                            <span>Eliminar</span>
                         }
                     </button>
                 </div>
@@ -390,9 +447,11 @@
 
 @if (hasError)
 {
-    <div class="alert @(messageIsInfo ? "alert-info" : "alert-danger") position-fixed bottom-0 end-0 m-3" style="z-index: 9999;">
-        @errorMessage
-        <button type="button" class="btn-close" @onclick="DismissError"></button>
+    <div class="alert @(messageIsInfo ? "alert-info" : "alert-danger") position-fixed bottom-0 end-0 m-3 pt-toast" style="z-index: 9999;">
+        <div class="d-flex align-items-center gap-2">
+            <span>@errorMessage</span>
+            <button type="button" class="btn-close" @onclick="DismissError"></button>
+        </div>
     </div>
 }
 
@@ -416,13 +475,17 @@
     private DetailedPerformanceDto? DetailedPerf { get; set; }
     private List<PeriodPerformanceDto> PerfPeriods => DetailedPerf?.Periods ?? [];
     private List<TransactionDto> itemTransactions { get; set; } = [];
+    private bool showSafeBackDialog { get; set; } = false;
+    private PortfolioItemDto? safeBackItem;
+    private Guid? addToExistingItemId;
 
     private static string TxTypeLabel(string type) => type switch
     {
-        "Buy" => "Suscripci\u00f3n",
+        "Buy" => "Suscripción",
         "Sell" => "Reembolso",
         "TransferIn" => "Traspaso recibido",
         "TransferOut" => "Traspaso emitido",
+        "SafeBack" => "SafeBack",
         _ => type
     };
 
@@ -461,17 +524,17 @@
                 var ok = result.Items.Count(i => i.Status == "ok" || i.Status == "up-to-date");
                 var failed = result.Items.Count - ok;
                 History = await ApiService.GetHistoryAsync(UserIdService.UserId);
-                ShowInfo($"Hist\u00f3rico: {result.TotalPointsInserted} puntos insertados ({ok} s\u00edmbolos OK{(failed > 0 ? $", {failed} con error" : "")}).");
+                ShowInfo($"Histórico: {result.TotalPointsInserted} puntos insertados ({ok} símbolos OK{(failed > 0 ? $", {failed} con error" : "")}).");
             }
             else
             {
-                ShowError("No se pudo cargar el hist\u00f3rico.");
+                ShowError("No se pudo cargar el histórico.");
             }
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Backfill failed");
-            ShowError($"Error al cargar hist\u00f3rico: {ex.Message}");
+            ShowError($"Error al cargar histórico: {ex.Message}");
         }
         finally
         {
@@ -607,7 +670,7 @@
             var label = Periods.First(p => p.Key == SelectedPeriod).Label;
             if (SelectedPeriod == "ytd")
                 label = YtdLabel;
-            return label + (SelectedPeriod == "1d" ? " (vs \u00faltimo d\u00eda disponible)" : "");
+            return label + (SelectedPeriod == "1d" ? " (vs último día disponible)" : "");
         }
     }
 
@@ -717,7 +780,22 @@
     private void ShowAddDialog()
     {
         Logger.LogInformation("ShowAddDialog called");
+        addToExistingItemId = null;
         showAddDialog = true;
+    }
+
+    private void ShowAddToExistingDialog(PortfolioItemDto item)
+    {
+        Logger.LogInformation("ShowAddToExistingDialog called for {Symbol}", item.Symbol);
+        addToExistingItemId = item.Id;
+        showAddDialog = true;
+    }
+
+    private void ShowSafeBackDialog(PortfolioItemDto item)
+    {
+        Logger.LogInformation("ShowSafeBackDialog called for {Symbol}", item.Symbol);
+        safeBackItem = item;
+        showSafeBackDialog = true;
     }
 
     private void ShowEditDialog(PortfolioItemDto item)
