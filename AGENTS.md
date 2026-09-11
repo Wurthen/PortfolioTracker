@@ -162,7 +162,7 @@ At the start of every session, read `notes/memory.md` and any other `*.md` files
 ## Project Scripts & Notes
 
 - `scripts/` — maintenance SQL (`rebuild_gold.sql`); `recalculate_safeback_costbasis.sql` recalculates cost basis for items with historical SafeBacks (idempotent).
-- `notes/` — session memory plus `notes/audit-2026-09-10.md` (full code audit with a resolution status section added on 11/09).
+- `notes/` — session memory plus `notes/audit-2026-09-10.md` (full code audit with a resolution status section added on 11/09) and `notes/plan-multi-portfolio-import.md` (agreed plan for multi-portfolio support and broker CSV/PDF import).
 
 ## Common Gotchas
 
