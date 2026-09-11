@@ -51,6 +51,28 @@ public static class ReturnCalculators
         return result;
     }
 
+    /// <summary>
+    /// Maps a transaction to its external cash flow: Buys and SafeBack are money in,
+    /// Sells are money out. Transfers are internal and return zero.
+    /// </summary>
+    public static decimal ExternalFlowOf(PortfolioTransaction tx) => tx.Type switch
+    {
+        "Buy" => tx.AmountEur + tx.Commission,
+        "SafeBack" => tx.AmountEur,
+        "Sell" => -tx.AmountEur,
+        _ => 0m
+    };
+
+    /// <summary>
+    /// External flows grouped by day, ready for the TWR series. SafeBack is treated
+    /// as a contribution (like a Buy), so its reinvested cash never shows as return.
+    /// </summary>
+    public static Dictionary<DateTime, decimal> BuildExternalFlowsByDate(IEnumerable<PortfolioTransaction> transactions)
+        => transactions
+            .Where(t => t.Type is "Buy" or "Sell" or "SafeBack")
+            .GroupBy(t => t.Date.Date)
+            .ToDictionary(g => g.Key, g => g.Sum(ExternalFlowOf));
+
     /// <summary>Sum of external flows dated after <paramref name="afterDate"/> up to <paramref name="upToDate"/> (inclusive).</summary>
     internal static decimal SumFlowsBetween(IReadOnlyList<KeyValuePair<DateTime, decimal>> orderedFlows, DateTime afterDate, DateTime upToDate)
     {
@@ -65,10 +87,10 @@ public static class ReturnCalculators
 
     /// <summary>
     /// Computes the portfolio's daily simple return (%): (value - invested) / invested.
-    /// Invested accumulates Buy cost (amount + commission) and net transfers; SafeBack
-    /// is treated as return (it increases value but never the cost basis), so it is
-    /// deliberately excluded here. This is the same source of truth used since
-    /// inception by the "Ganancia / Pérdida" KPI, so a full-history chart matches it.
+    /// Invested accumulates Buy cost (amount + commission), net transfers and SafeBack
+    /// contributions (money the broker reinvests for the user, counted as if the user
+    /// had deposited it). This is the same source of truth used since inception by the
+    /// "Ganancia / Pérdida" KPI, so a full-history chart matches it.
     /// </summary>
     public static List<HistoryPointDto> ComputeSimpleReturnSeries(
         List<PortfolioHistoryPoint> totals,
@@ -80,7 +102,7 @@ public static class ReturnCalculators
 
         var ordered = totals.OrderBy(p => p.Date).ToList();
         var investedTxs = transactions
-            .Where(t => t.Type is "Buy" or "TransferIn" or "TransferOut")
+            .Where(t => t.Type is "Buy" or "TransferIn" or "TransferOut" or "SafeBack")
             .OrderBy(t => t.Date)
             .ToList();
 
@@ -94,6 +116,7 @@ public static class ReturnCalculators
                 costBasis += investedTxs[txIndex].Type switch
                 {
                     "Buy" => investedTxs[txIndex].AmountEur + investedTxs[txIndex].Commission,
+                    "SafeBack" => investedTxs[txIndex].AmountEur,
                     "TransferIn" => investedTxs[txIndex].AmountEur,
                     "TransferOut" => -investedTxs[txIndex].AmountEur,
                     _ => 0m
@@ -113,9 +136,8 @@ public static class ReturnCalculators
 
     /// <summary>
     /// Computes the daily return (%) series for each position based on its market value
-    /// and the cost basis accumulated from Buy/TransferIn/TransferOut transactions,
+    /// and the cost basis accumulated from Buy/TransferIn/TransferOut/SafeBack transactions,
     /// using the same cost definition as ComputeSimpleReturnSeries (commission included).
-    /// SafeBack transactions increase shares but do not increase cost basis.
     /// </summary>
     public static Dictionary<string, List<HistoryPointDto>> ComputeItemReturnSeries(
         List<PortfolioHistoryPoint> itemPoints,
@@ -124,7 +146,7 @@ public static class ReturnCalculators
         var result = new Dictionary<string, List<HistoryPointDto>>();
 
         var txsByItem = transactions
-            .Where(t => t.Type is "Buy" or "TransferIn" or "TransferOut")
+            .Where(t => t.Type is "Buy" or "TransferIn" or "TransferOut" or "SafeBack")
             .GroupBy(t => t.ItemId)
             .ToDictionary(
                 g => g.Key,
@@ -155,6 +177,7 @@ public static class ReturnCalculators
                     costBasis += itemTxs[txIndex].Type switch
                     {
                         "Buy" => itemTxs[txIndex].AmountEur + itemTxs[txIndex].Commission,
+                        "SafeBack" => itemTxs[txIndex].AmountEur,
                         "TransferIn" => itemTxs[txIndex].AmountEur,
                         "TransferOut" => -itemTxs[txIndex].AmountEur,
                         _ => 0m

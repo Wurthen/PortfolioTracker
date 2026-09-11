@@ -61,6 +61,12 @@
                     <div class="pt-kpi-label">Ganancia / Pérdida</div>
                     <div class="pt-kpi-value @TotalGainLossClass">@TotalGainLoss.ToString("+#,##0.00;-#,##0.00;0.00") €</div>
                     <div class="pt-kpi-sub @TotalGainLossClass">@TotalGainLossPercent.ToString("F2")%</div>
+                    @if (TotalSafeBack > 0)
+                    {
+                        <div class="pt-kpi-sub text-info" title="Dinero recibido vía SafeBack: cuenta como aportación, no como ganancia.">
+                            +@TotalSafeBack.ToString("N2") € SafeBack recibido
+                        </div>
+                    }
                 </div>
             </div>
             <div class="col-xl-3 col-md-6">
@@ -240,6 +246,10 @@
                                                     @if (item.UseAlternativeSymbol)
                                                     {
                                                         <span class="badge bg-info ms-1" title="Usando símbolo alternativo @item.AlternativeSymbol">A</span>
+                                                    }
+                                                    @if (item.SafeBackAmount > 0)
+                                                    {
+                                                        <span class="badge bg-info text-dark ms-1" title="SafeBack acumulado: @item.SafeBackAmount.ToString("N2") € recibidos como aportación. No cuenta como ganancia.">SB +@item.SafeBackAmount.ToString("N2") €</span>
                                                     }
                                                 </div>
                                             </div>
@@ -819,6 +829,7 @@
 
     private decimal TotalValue => PortfolioItems.Sum(p => p.CurrentValue);
     private decimal TotalGainLoss => PortfolioItems.Sum(p => p.GainLoss);
+    private decimal TotalSafeBack => PortfolioItems.Sum(p => p.SafeBackAmount);
 
     // Single source of truth computed server-side (PortfolioService.ComputeSinceInception):
     // both this KPI and the "Desde inicio" period card read the same value.

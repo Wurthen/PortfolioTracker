@@ -142,9 +142,9 @@ The "Rentabilidad por periodo" cards do not carry their own metric: `Home.razor`
 
 ### SafeBack
 
-SafeBack is cash received (e.g., from Trade Republic) that is automatically reinvested at market price. It is recorded as a `SafeBack` transaction that **adds shares without adding cost basis** — it is treated as return, not a purchase. It accumulates `SafeBackAmount`/`SafeBackShares` for tracking and is excluded from external cash flows in TWR. `HistoryBackfillService.SharesHeldAt` must count `SafeBack` shares so historical values stay consistent with the live snapshot. Use `POST /api/portfolio/{userId}/backfill?rebuild=true` after changing the replay logic: a plain re-run skips existing rows and will not repair them.
+SafeBack is cash received (e.g., from Trade Republic) that is automatically reinvested at market price. It is treated as an **external contribution** (as if the user deposited the money): the `SafeBack` transaction adds shares **and cost basis**, so the injection itself never shows as return — only the market performance of those shares counts afterwards. It accumulates `SafeBackAmount`/`SafeBackShares` for tracking and the UI surfaces a flat `+X € SafeBack` badge (row) and total (KPI card). `HistoryBackfillService.SharesHeldAt` must count `SafeBack` shares so historical values stay consistent with the live snapshot. Use `POST /api/portfolio/{userId}/backfill?rebuild=true` after changing the replay logic: a plain re-run skips existing rows and will not repair them.
 
-`TransactionService.AddSafeBackAsync` dilutes `PurchasePrice` via `PortfolioService.ComputeSafeBackPrice`, so `Shares * PurchasePrice + Commission` stays constant. `scripts/recalculate_safeback_costbasis.sql` is only a one-time repair for rows saved before that fix (F1 in `notes/audit-2026-09-10.md`); new SafeBacks need no patch.
+`TransactionService.AddSafeBackAsync` merges the injection via `PortfolioService.ComputeWeightedAveragePrice` with `addedCostEur = AmountEur`. SafeBack is an external cash flow in both TWR (`ReturnCalculators.BuildExternalFlowsByDate`) and XIRR (`TransactionService.GetExternalFlowsAsync`), and it adds to the invested cost in `ComputeSimpleReturnSeries`/`ComputeItemReturnSeries`. `scripts/recalculate_safeback_costbasis.sql` recalculates `PurchasePrice` as `SUM(Buy + TransferIn + SafeBack AmountEur) / Shares` for items with historical SafeBacks; it is idempotent, so re-run it after restoring a backup or changing the cost model.
 
 ### Charting Conventions
 
@@ -161,7 +161,7 @@ At the start of every session, read `notes/memory.md` and any other `*.md` files
 
 ## Project Scripts & Notes
 
-- `scripts/` — maintenance SQL (`rebuild_gold.sql`); `recalculate_safeback_costbasis.sql` repairs cost basis on rows saved before the SafeBack fix.
+- `scripts/` — maintenance SQL (`rebuild_gold.sql`); `recalculate_safeback_costbasis.sql` recalculates cost basis for items with historical SafeBacks (idempotent).
 - `notes/` — session memory plus `notes/audit-2026-09-10.md` (full code audit with a resolution status section added on 11/09).
 
 ## Common Gotchas

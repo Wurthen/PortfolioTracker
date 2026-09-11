@@ -50,19 +50,15 @@ public class PortfolioServiceTests
     }
 
     [Fact]
-    public void ComputeSafeBackPrice_DilutesPriceButKeepsCostBasis()
+    public void ComputeWeightedAveragePrice_SafeBackContribution_AddsCostToBasis()
     {
-        // 10 shares @ 100 = 1000 cost; 2 SafeBack shares arrive at zero cost.
-        var price = PortfolioService.ComputeSafeBackPrice(existingShares: 10m, existingAvgPrice: 100m, safeBackShares: 2m);
+        // 10 shares @ 100 (cost 1000) + SafeBack 200 EUR buys 2 shares reinvested at market.
+        // The contribution enters the cost basis, so the injection itself adds no gain.
+        var price = PortfolioService.ComputeWeightedAveragePrice(
+            existingShares: 10m, existingAvgPrice: 100m, addedShares: 2m, addedCostEur: 300m);
 
-        Assert.Equal(1000m / 12m, price, 8);
-        Assert.Equal(1000m, price * 12m, 6); // Shares * PurchasePrice is unchanged.
-    }
-
-    [Fact]
-    public void ComputeSafeBackPrice_ZeroExistingShares_ReturnsZero()
-    {
-        Assert.Equal(0m, PortfolioService.ComputeSafeBackPrice(0m, 100m, 2m));
+        Assert.Equal(1300m / 12m, price, 8);
+        Assert.Equal(1300m, price * 12m, 6); // SafeBack money stays invested in the position.
     }
 
     [Theory]

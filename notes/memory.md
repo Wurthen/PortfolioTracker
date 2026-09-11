@@ -3,7 +3,8 @@
 ## Correcciones de la auditoría (F1–F7 y backlog)
 
 ### Dinero y métricas
-- **F1 SafeBack:** `TransactionService.AddSafeBackAsync` ahora diluye `PurchasePrice` con `PortfolioService.ComputeSafeBackPrice` (añade participaciones sin coste). `Shares * PurchasePrice` queda constante → la rentabilidad ya no se hunde. Tests añadidos.
+- **SafeBack (modelo final 11/09):** es una **aportación externa** (como si el usuario ingresara el dinero): `AddSafeBackAsync` usa `ComputeWeightedAveragePrice` con `addedCostEur = AmountEur`, así suma participaciones Y coste; la inyección no cuenta como ganancia, solo lo que rindan esas participaciones. Entra como flujo externo en TWR/XIRR (`ExternalFlowOf`/`BuildExternalFlowsByDate`) y en el coste de `ComputeSimpleReturnSeries`/`ComputeItemReturnSeries`. UI: badge `SB +X €` por fila y total bajo el KPI. Revierte el modelo "sin coste" del 04/09 y el fix F1 previo del mismo día (que diluía el precio). `ComputeSafeBackPrice` eliminado. Tests volteados + nuevos.
+- **F1 histórico:** durante la mañana se aplicó el fix de "coste constante" + reparación SQL; por la tarde el usuario aclaró que el SafeBack debe tratarse como aportación, así que el script se actualizó (coste = Buy + TransferIn + SafeBack) y se re-ejecutó. PHYMF vuelve a 71,9446 € (coste 281,55 € = 250 € invertidos + 31,55 € de SafeBack).
 - **TWR con flujos en huecos:** `ReturnCalculators.SumFlowsBetween` suma los flujos del intervalo `(punto previo, punto actual]`, así una compra en fin de semana/festivo ya no infla el TWR.
 - **Comisiones y traspasos por posición:** `ComputeItemReturnSeries` usa `AmountEur + Commission` para Buy y resta TransferOut, igual que `ComputeSimpleReturnSeries`.
 - **F5 una sola métrica por ventana:** `PeriodPerformanceDto` queda en `Key`/`Label`; `Home.razor` calcula cada tarjeta con la misma serie TWR y el mismo `FilterSeries`/`ComputeSeriesWindowReturn` que el gráfico. Modified Dietz eliminado (y sus tests).
@@ -33,13 +34,12 @@
 
 ### Verificación
 - `dotnet build PortfolioTracker.slnx` → OK, 0 errores y sin MSB3277.
-- `dotnet test` → **48 OK** (el stub `UnitTest1` eliminado no cuenta).
+- `dotnet test` → **49 OK** tras el cambio de modelo de SafeBack.
 - `docker build` API y Blazor → OK. `docker compose config` → OK.
 - `dotnet tool run dotnet-ef migrations list --no-connect` → OK con Design 10.0.4.
+- Script SafeBack ejecutado contra la BD local (backup previo en `%TEMP%\opencode`): PHYMF `PurchasePrice` 63,8826 → 71,9446 € (coste 281,55 €).
 
 ### Pendiente
-- Ejecutar `scripts/recalculate_safeback_costbasis.sql` en la BD real una vez (datos previos al fix).
-- Commit por work units (F7): todo el trabajo sigue sin commitear.
 - Refactor de `Home.razor` y cierre con Escape en modales.
 - F4 (auth) y F6 (GET con efectos secundarios) requieren decisión de diseño.
 

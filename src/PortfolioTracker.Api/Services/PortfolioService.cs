@@ -60,13 +60,6 @@ public class PortfolioService
             ? ((existingShares * existingAvgPrice) + addedCostEur) / (existingShares + addedShares)
             : 0;
 
-    /// <summary>
-    /// Dilutes the average purchase price when SafeBack shares are added at zero cost,
-    /// so Shares * PurchasePrice (the position's cost basis) stays unchanged.
-    /// </summary>
-    public static decimal ComputeSafeBackPrice(decimal existingShares, decimal existingAvgPrice, decimal safeBackShares)
-        => ComputeWeightedAveragePrice(existingShares, existingAvgPrice, safeBackShares, 0m);
-
     public static PortfolioItemDto MapToDto(PortfolioItem item, decimal? currentPriceUsd, decimal usdToEur)
     {
         var priceAvailable = currentPriceUsd.HasValue;
@@ -332,12 +325,7 @@ public class PortfolioService
         }
 
         var totals = points.Where(p => p.ItemId == Guid.Empty).OrderBy(p => p.Date).ToList();
-        var flowsByDate = transactions
-            .Where(t => t.Type is "Buy" or "Sell")
-            .GroupBy(t => t.Date.Date)
-            .ToDictionary(
-                g => g.Key,
-                g => g.Sum(t => t.Type == "Buy" ? t.AmountEur + t.Commission : -t.AmountEur));
+        var flowsByDate = ReturnCalculators.BuildExternalFlowsByDate(transactions);
 
         response.TotalReturn = ReturnCalculators.ComputeTwrSeries(totals, flowsByDate);
         response.TotalSimpleReturn = ReturnCalculators.ComputeSimpleReturnSeries(totals, transactions);

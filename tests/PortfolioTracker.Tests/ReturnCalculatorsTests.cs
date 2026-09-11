@@ -143,15 +143,15 @@ public class ReturnCalculatorsTests
     }
 
     [Fact]
-    public void ComputeItemReturnSeries_SafeBackDoesNotIncreaseCostBasis()
+    public void ComputeItemReturnSeries_SafeBackIncreasesCostBasis()
     {
         var itemId = Guid.NewGuid();
-        // Value grows from 1000 to 1200, but a SafeBack of 200 happened on day 2.
-        // Cost basis should remain 1000 (the original Buy), so return = 20%.
+        // Buy 1000 on day 1; SafeBack 200 reinvested on day 2; value 1260 on day 3.
+        // Cost basis is 1200, so only the market gain counts: 60 / 1200 = 5%.
         var points = new List<PortfolioHistoryPoint>
         {
             new() { Date = new DateTime(2026, 1, 1), ValueEur = 1000m, ItemId = itemId },
-            new() { Date = new DateTime(2026, 1, 3), ValueEur = 1200m, ItemId = itemId }
+            new() { Date = new DateTime(2026, 1, 3), ValueEur = 1260m, ItemId = itemId }
         };
         var transactions = new List<PortfolioTransaction>
         {
@@ -176,7 +176,7 @@ public class ReturnCalculatorsTests
         var result = ReturnCalculators.ComputeItemReturnSeries(points, transactions);
 
         var series = result[itemId.ToString()];
-        Assert.Equal(20m, series[^1].Value);
+        Assert.Equal(5m, series[^1].Value);
     }
 
     [Fact]
@@ -271,14 +271,14 @@ public class ReturnCalculatorsTests
     }
 
     [Fact]
-    public void ComputeSimpleReturnSeries_SafeBackDoesNotIncreaseCostBasis()
+    public void ComputeSimpleReturnSeries_SafeBackIncreasesCostBasis()
     {
-        // Value grows from 1000 to 1200; a SafeBack of 200 (2 shares) on day 2 is return,
-        // so the denominator stays at the original 1000 investment => 20%.
+        // Buy 1000 on day 1; SafeBack 200 on day 2; value 1260 on day 3.
+        // Cost basis is 1200, so the injection itself is not return: 60 / 1200 = 5%.
         var totals = new List<PortfolioHistoryPoint>
         {
             new() { Date = new DateTime(2026, 1, 1), ValueEur = 1000m, ItemId = Guid.Empty },
-            new() { Date = new DateTime(2026, 1, 3), ValueEur = 1200m, ItemId = Guid.Empty }
+            new() { Date = new DateTime(2026, 1, 3), ValueEur = 1260m, ItemId = Guid.Empty }
         };
         var transactions = new List<PortfolioTransaction>
         {
@@ -288,6 +288,45 @@ public class ReturnCalculatorsTests
 
         var result = ReturnCalculators.ComputeSimpleReturnSeries(totals, transactions);
 
-        Assert.Equal(20m, result[^1].Value);
+        Assert.Equal(5m, result[^1].Value);
+    }
+
+    [Fact]
+    public void ComputeTwrSeries_WithSafeBackFlow_IgnoresInjection()
+    {
+        // The +200 value jump on day 2 is the SafeBack injection, so TWR stays flat.
+        var totals = new List<PortfolioHistoryPoint>
+        {
+            new() { Date = new DateTime(2026, 1, 1), ValueEur = 1000m, ItemId = Guid.Empty },
+            new() { Date = new DateTime(2026, 1, 2), ValueEur = 1200m, ItemId = Guid.Empty }
+        };
+        var flows = new Dictionary<DateTime, decimal>
+        {
+            [new DateTime(2026, 1, 2)] = 200m
+        };
+
+        var result = ReturnCalculators.ComputeTwrSeries(totals, flows);
+
+        Assert.Equal(0m, result[^1].Value);
+    }
+
+    [Fact]
+    public void BuildExternalFlowsByDate_IncludesSafeBackAndExcludesTransfers()
+    {
+        var transactions = new List<PortfolioTransaction>
+        {
+            new() { ItemId = Guid.NewGuid(), Type = "Buy", Date = new DateTime(2026, 1, 1), AmountEur = 1000m, Commission = 10m, Shares = 10m },
+            new() { ItemId = Guid.NewGuid(), Type = "SafeBack", Date = new DateTime(2026, 1, 2), AmountEur = 200m, Shares = 2m },
+            new() { ItemId = Guid.NewGuid(), Type = "Sell", Date = new DateTime(2026, 1, 2), AmountEur = 500m, Shares = 5m },
+            new() { ItemId = Guid.NewGuid(), Type = "TransferIn", Date = new DateTime(2026, 1, 3), AmountEur = 300m, Shares = 3m },
+            new() { ItemId = Guid.NewGuid(), Type = "TransferOut", Date = new DateTime(2026, 1, 4), AmountEur = 150m, Shares = 1.5m }
+        };
+
+        var flows = ReturnCalculators.BuildExternalFlowsByDate(transactions);
+
+        Assert.Equal(1010m, flows[new DateTime(2026, 1, 1)]);  // Buy + commission
+        Assert.Equal(-300m, flows[new DateTime(2026, 1, 2)]);  // SafeBack +200, Sell -500
+        Assert.False(flows.ContainsKey(new DateTime(2026, 1, 3)));
+        Assert.False(flows.ContainsKey(new DateTime(2026, 1, 4)));
     }
 }

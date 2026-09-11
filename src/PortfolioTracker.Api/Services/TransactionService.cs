@@ -211,10 +211,12 @@ public class TransactionService
             Commission = 0
         };
 
-        // SafeBack is cash received that is reinvested at market price. It increases shares
-        // without increasing cost basis, so it is treated as return rather than a purchase.
-        // Diluting the average price keeps Shares * PurchasePrice (cost basis) unchanged.
-        item.PurchasePrice = PortfolioService.ComputeSafeBackPrice(item.Shares, item.PurchasePrice, tx.Shares);
+        // SafeBack is cash received that is reinvested at market price. It is treated as
+        // an external contribution (as if the user deposited the money): it increases both
+        // shares and cost basis, so the injection itself never shows as return. Only the
+        // market performance of those shares counts afterwards.
+        item.PurchasePrice = PortfolioService.ComputeWeightedAveragePrice(
+            item.Shares, item.PurchasePrice, tx.Shares, tx.AmountEur);
         item.Shares += tx.Shares;
         item.SafeBackAmount += tx.AmountEur;
         item.SafeBackShares += tx.Shares;
@@ -288,7 +290,7 @@ public class TransactionService
         return (true, "");
     }
 
-    /// <summary>External cash flows: Buy positive (money in), Sell negative (money out); transfers excluded.</summary>
+    /// <summary>External cash flows: Buy/SafeBack positive (money in), Sell negative (money out); transfers excluded.</summary>
     private async Task<List<(DateTime Date, decimal Flow)>> GetExternalFlowsAsync(Guid userId, List<PortfolioItem> items)
     {
         var itemIds = items.Select(i => i.Id).ToHashSet();
@@ -298,15 +300,8 @@ public class TransactionService
             .ToListAsync();
 
         return txs
-            .Where(t => itemIds.Contains(t.ItemId) && t.Type is "Buy" or "Sell")
-            .Select(t => (
-                Date: t.Date,
-                Flow: t.Type switch
-                {
-                    "Buy" => t.AmountEur + t.Commission,
-                    "Sell" => -t.AmountEur,
-                    _ => 0m
-                }))
+            .Where(t => itemIds.Contains(t.ItemId) && t.Type is "Buy" or "Sell" or "SafeBack")
+            .Select(t => (Date: t.Date, Flow: ReturnCalculators.ExternalFlowOf(t)))
             .OrderBy(f => f.Date)
             .ToList();
     }
