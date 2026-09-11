@@ -10,7 +10,7 @@
 }
 else
 {
-    <svg viewBox="0 0 800 280" style="width:100%;height:auto;" role="img" aria-label="Evolución del valor de la cartera">
+    <svg viewBox="0 0 800 280" style="width:100%;height:auto;" role="img" aria-label="@(IsReturn ? "Rentabilidad acumulada" : "Evolución del valor de la cartera")">
         <defs>
             <linearGradient id="area-@(Uid)" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stop-color="@StrokeColor" stop-opacity="0.35" />
@@ -36,13 +36,13 @@ else
             foreach (var p in PlotPoints)
             {
                 <circle cx="@p.X.ToString(Invariant)" cy="@p.Y.ToString(Invariant)" r="7" fill="transparent">
-                    <title>@p.Date.ToString("dd/MM/yyyy"): @p.Value.ToString("N2") €</title>
+                    <title>@p.Date.ToString("dd/MM/yyyy"): @FormatValue(p.Value)</title>
                 </circle>
             }
         }
 
         <text x="@LastX.ToString(Invariant)" y="@((LastY - 14).ToString(Invariant))" text-anchor="middle"
-              font-size="15" font-weight="600" fill="@StrokeColor" font-family="Inter, system-ui, sans-serif">@LastValue.ToString("N2") €</text>
+              font-size="15" font-weight="600" fill="@StrokeColor" font-family="Inter, system-ui, sans-serif">@FormatValue(LastValue)</text>
 
         <text x="@PadL" y="@(H - 6)" font-size="12" fill="#94a3b8" font-family="Inter, system-ui, sans-serif">@FirstDate</text>
         <text x="@(W - PadR)" y="@(H - 6)" text-anchor="end" font-size="12" fill="#94a3b8" font-family="Inter, system-ui, sans-serif">@LastDate</text>
@@ -52,6 +52,9 @@ else
 @code {
     [Parameter]
     public List<HistoryPointDto> Points { get; set; } = [];
+
+    [Parameter]
+    public bool IsReturn { get; set; }
 
     private const int W = 800;
     private const int H = 280;
@@ -127,5 +130,12 @@ else
         StrokeColor = last.Value >= data[0].Value ? "#22c55e" : "#ef4444";
 
         GridLinesY = Enumerable.Range(1, 3).Select(i => PadT + i * (H - PadT - PadB) / 4.0);
+    }
+
+    private string FormatValue(decimal value)
+    {
+        if (IsReturn)
+            return $"{value.ToString("+0.00;-0.00;0.00")}%";
+        return $"{value:N2} €";
     }
 }

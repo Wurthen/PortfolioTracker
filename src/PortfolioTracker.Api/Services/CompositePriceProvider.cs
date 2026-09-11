@@ -29,7 +29,7 @@ public class CompositePriceProvider : IPriceProvider
 
     public Task<decimal?> GetPriceAsync(string symbol)
     {
-        var normalizedSymbol = NormalizeFundSymbol(symbol);
+        var normalizedSymbol = SymbolClassifier.StripExchangeSuffix(symbol);
         var cacheKey = $"req_{normalizedSymbol}";
 
         // Lazy ensures the valueFactory (and therefore the provider chain) runs exactly once
@@ -70,7 +70,7 @@ public class CompositePriceProvider : IPriceProvider
     {
         _logger.LogInformation("CompositePriceProvider trying to get price for {Symbol} (normalized: {NormalizedSymbol})", originalSymbol, normalizedSymbol);
 
-        var providers = IsFundSymbol(normalizedSymbol) ? _fundProviders : _stockProviders;
+        var providers = SymbolClassifier.IsFund(normalizedSymbol) ? _fundProviders : _stockProviders;
 
         foreach (var provider in providers)
         {
@@ -128,32 +128,5 @@ public class CompositePriceProvider : IPriceProvider
 
         _logger.LogError("All providers failed for {Symbol} and no cached price available", originalSymbol);
         return null;
-    }
-
-    private static string NormalizeFundSymbol(string symbol)
-    {
-        // Morningstar fund symbols often come with an exchange suffix from Yahoo/OTC (e.g., 0P0000X09U.F, 0P0000X09U.DE)
-        // Twelve Data and other providers use the symbol without the suffix.
-        if (symbol.StartsWith("0P", StringComparison.OrdinalIgnoreCase))
-        {
-            var dotIndex = symbol.LastIndexOf('.');
-            if (dotIndex > 0)
-            {
-                return symbol[..dotIndex];
-            }
-        }
-
-        return symbol;
-    }
-
-    private static bool IsFundSymbol(string symbol)
-    {
-        if (symbol.StartsWith("0P", StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        if (symbol.EndsWith(".EUFUND", StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        return false;
     }
 }

@@ -4,6 +4,9 @@ public class PortfolioHistoryResponseDto
 {
     public List<HistoryPointDto> Total { get; set; } = [];
     public Dictionary<string, List<HistoryPointDto>> Items { get; set; } = [];
+    public List<HistoryPointDto> TotalReturn { get; set; } = [];
+    public List<HistoryPointDto> TotalSimpleReturn { get; set; } = [];
+    public Dictionary<string, List<HistoryPointDto>> ItemReturns { get; set; } = [];
 }
 
 public class HistoryPointDto

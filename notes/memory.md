@@ -1,3 +1,124 @@
+# Memory - Sesión 11/09/2026
+
+## Correcciones de la auditoría (F1–F7 y backlog)
+
+### Dinero y métricas
+- **F1 SafeBack:** `TransactionService.AddSafeBackAsync` ahora diluye `PurchasePrice` con `PortfolioService.ComputeSafeBackPrice` (añade participaciones sin coste). `Shares * PurchasePrice` queda constante → la rentabilidad ya no se hunde. Tests añadidos.
+- **TWR con flujos en huecos:** `ReturnCalculators.SumFlowsBetween` suma los flujos del intervalo `(punto previo, punto actual]`, así una compra en fin de semana/festivo ya no infla el TWR.
+- **Comisiones y traspasos por posición:** `ComputeItemReturnSeries` usa `AmountEur + Commission` para Buy y resta TransferOut, igual que `ComputeSimpleReturnSeries`.
+- **F5 una sola métrica por ventana:** `PeriodPerformanceDto` queda en `Key`/`Label`; `Home.razor` calcula cada tarjeta con la misma serie TWR y el mismo `FilterSeries`/`ComputeSeriesWindowReturn` que el gráfico. Modified Dietz eliminado (y sus tests).
+
+### Backend / infra
+- **F2/F3 Docker:** API y Blazor construyen con `docker build` (contexto = carpeta del proyecto). `--no-build` eliminado, COPY del proyecto Blazor eliminado, `.dockerignore` añadido.
+- **Compose:** healthcheck `pg_isready` en Postgres + `depends_on: service_healthy` en API; `ASPNETCORE_URLS=http://+:8081` en Blazor.
+- **Claves vacías:** `appsettings.json` ya no usa `SET_IN_USER_SECRETS`; sin secretos los proveedores se saltan la llamada (incluido TwelveData, que ya no cae a `demo`).
+- **Código muerto fuera:** `GET /performance`, `GetPerformanceAsync`, `ComputePerformanceFromHistoryAsync`, `YahooFinanceService.GetQuoteInfoAsync/GetHistoricalPriceAsync`, campos `Daily/Weekly/...` del DTO.
+- **`SymbolClassifier`:** fuente única para fondos (`0P*`, `.EUFUND`) y sufijos; sustituye 5 implementaciones duplicadas.
+- **Fallback de símbolo alternativo:** si EOD falla, el composite reintenta con el símbolo primario (antes insistía con el alternativo).
+- **Paquetes:** EF Design y Npgsql alineados a 10.0.4; `dotnet-ef` 10.0.10 sigue funcionando. Sin warnings MSB3277.
+- **Blazor:** `UseUrls` fuera (launchSettings y `ASPNETCORE_URLS` mandan), `Antiforgery.Key` muerto eliminado, Chart.js servido local y colores desde tokens CSS.
+
+### Frontend
+- Diálogo "Añadir a existente": la preselección solo se aplica la primera vez (`_appliedPreselectedId`).
+- Traspaso: solo fondos, origen ≠ destino, importe ≤ valor actual.
+- Borrado: comprueba el bool del API y avisa si falla.
+- Refresco del dashboard serializado con `SemaphoreSlim` (sin carreras).
+- Sin fugas de `ex.Message`; errores genéricos + log.
+- Modales con `role="dialog"`, `aria-modal`, `aria-labelledby` y cierres con `aria-label`.
+- `blazor-error-ui` en español y CSS duplicado eliminado.
+
+### Repo
+- README raíz real; eliminados `PortfolioTracker/README.md` (residuo), `src/README.md` y `UnitTest1.cs`.
+- Auditoría actualizada con sección "Estado de resolución (11/09/2026)".
+
+### Verificación
+- `dotnet build PortfolioTracker.slnx` → OK, 0 errores y sin MSB3277.
+- `dotnet test` → **48 OK** (el stub `UnitTest1` eliminado no cuenta).
+- `docker build` API y Blazor → OK. `docker compose config` → OK.
+- `dotnet tool run dotnet-ef migrations list --no-connect` → OK con Design 10.0.4.
+
+### Pendiente
+- Ejecutar `scripts/recalculate_safeback_costbasis.sql` en la BD real una vez (datos previos al fix).
+- Commit por work units (F7): todo el trabajo sigue sin commitear.
+- Refactor de `Home.razor` y cierre con Escape en modales.
+- F4 (auth) y F6 (GET con efectos secundarios) requieren decisión de diseño.
+
+---
+
+# Memory - Sesión 10/09/2026
+
+## Consistencia de rentabilidad y bug SafeBack en el histórico
+
+### Problema
+El gráfico en modo **Rentabilidad** mostraba 9,14% en "Inicio" y "1A", mientras la KPI *Ganancia/Pérdida* y la tarjeta *Desde inicio* mostraban 6,65%.
+
+### Diagnóstico (dos causas)
+1. **Conceptual:** el gráfico usaba **TWR** (quita el efecto de las aportaciones) y la KPI usaba **rentabilidad simple** (ganancia ÷ invertido). Son métricas distintas y difieren si hay aportaciones dentro del periodo.
+2. **Bug:** `HistoryBackfillService` reconstruía las participaciones históricas con `Buy/TransferIn` (+) y `Sell/TransferOut` (−), dejando `SafeBack` en `_ => 0m`. El histórico no incluía las participaciones de SafeBack, pero el snapshot en vivo sí → salto artificial que inflaba el TWR.
+
+### Decisión
+La fuente de verdad para *desde inicio* es la **rentabilidad simple** (la de la KPI). TWR se reserva a ventanas acotadas (1S–6M).
+SafeBack se mantiene como **rendimiento** (el broker ingresa e invierte por el usuario): suma participaciones, no suma coste y no es flujo externo.
+
+### Cambios backend
+- `ReturnCalculators.ComputeSimpleReturnSeries(totals, transactions)`: serie % diaria = (valor − invertido) / invertido. Invertido = compras (importe + comisión) ± traspasos; SafeBack no suma.
+- `PortfolioService.GetHistoryAsync`: nuevo `TotalSimpleReturn` en `PortfolioHistoryResponseDto`.
+- `HistoryBackfillService.SharesHeldAt`: helper extraído que **cuenta SafeBack como +participaciones**; usado en el replay. Tests añadidos.
+- `BackfillAsync(userId, rebuild)`: con `rebuild=true` borra el histórico del usuario antes de regenerarlo. Endpoint `POST /api/portfolio/{userId}/backfill?rebuild=true`.
+
+### Cambios frontend
+- `Home.razor`: `IsFullHistoryWindow` detecta cuando la ventana (Inicio/YTD o 1A) cubre todo el histórico. En ese caso el gráfico usa `History.TotalSimpleReturn` y el titular es `SinceInceptionGainLossPercent`; subtítulo "Rentabilidad simple desde inicio (ganancia ÷ invertido)".
+- Botón de histórico ahora siempre visible; se convierte en "Recalcular histórico" (rebuild) cuando ya hay datos.
+- `PortfolioApiService.BackfillHistoryAsync(userId, rebuild)`.
+
+### Tests
+- Nuevos: `ComputeSimpleReturnSeries` (base, aportación, SafeBack) y `HistoryBackfillReplayTests.SharesHeldAt`.
+- `dotnet test` → **33 OK**.
+
+### Pendiente
+- Ejecutar **"Recalcular histórico"** una vez contra la BD real para reparar los puntos escritos con el replay antiguo (el re-run normal no repara filas existentes).
+- Revisar visualmente que Inicio/1A muestren el mismo 6,65%.
+- `AGENTS.md` actualizado (SafeBack + Return Metrics chart vs KPI).
+
+---
+
+
+
+## Rentabilidad TWR y SafeBack como rendimiento
+
+### Decisiones
+- El gráfico principal ahora tiene toggle **Valor / Rentabilidad** y **Rentabilidad es la vista por defecto**.
+- La rentabilidad se calcula como **TWR** (Time-Weighted Return), que elimina el efecto de aportaciones y retiradas.
+- **SafeBack** se modela como rendimiento: aumenta participaciones pero **no aumenta el precio medio** de la posición.
+
+### Cambios backend
+- `TransactionService.AddSafeBackAsync`: ya no suma el importe SafeBack al coste total de la posición.
+- Nuevo `ReturnCalculators` con:
+  - `ComputeTwrSeries`: rentabilidad acumulada diaria de la cartera.
+  - `ComputeItemReturnSeries`: rentabilidad diaria por posición basada en coste acumulado (Buy + TransferIn; SafeBack no suma).
+- `PortfolioService.GetHistoryAsync`: devuelve `TotalReturn` e `ItemReturns` además de `Total` e `Items`.
+- Script `scripts/recalculate_safeback_costbasis.sql` para recalcular el precio medio de posiciones con SafeBack histórico.
+
+### Cambios frontend
+- `PortfolioChart.razor`: soporta modo retorno (`IsReturn`) con formato % y color adaptado.
+- `Home.razor`:
+  - Toggle Valor/Rentabilidad en el gráfico principal; Rentabilidad por defecto.
+  - En modo **Valor** se muestra el cambio de valor en €, no un % (que era engañoso con aportaciones).
+  - En modo **Rentabilidad** se muestra el % TWR del periodo.
+  - El % del periodo en modo rentabilidad se calcula correctamente desde el TWR acumulado.
+  - Corregido `TotalGainLossPercent` para incluir comisiones en el denominador, alineándolo con el % de cada fila.
+  - Modal de detalle por posición con toggle Valor/Rentabilidad.
+
+### Tests
+- Añadidos `ReturnCalculatorsTests`: TWR sin flujos, con aportación, y SafeBack sin coste.
+
+### Pendiente
+- Ejecutar `scripts/recalculate_safeback_costbasis.sql` contra PostgreSQL si hay SafeBacks históricos.
+- Revisar visualmente el toggle y las curvas de rentabilidad con datos reales.
+- Decidir si en el periodo "Desde inicio" se debe mostrar el mismo % en el gráfico y en la tarjeta de ganancia/pérdida.
+
+---
+
 # Memory - Sesión 07/09/2026
 
 ## Rediseño UI Blazor

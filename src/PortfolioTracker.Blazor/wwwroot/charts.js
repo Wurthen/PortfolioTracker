@@ -1,5 +1,11 @@
 let allocationChart = null;
 
+// Reads the theme tokens defined in app.css so the chart follows the UI theme.
+const ptColor = (name, fallback) => {
+    const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return value || fallback;
+};
+
 // Draws the percentage of each slice directly on the doughnut.
 // Slices under 4% stay clean (no label).
 const percentOnSlice = {
@@ -49,7 +55,7 @@ window.updateAllocationChart = function (labels, data, colors, fullNames) {
                 data: data,
                 backgroundColor: colors,
                 borderWidth: 2,
-                borderColor: '#151e32'
+                borderColor: ptColor('--pt-surface', '#151e32')
             }]
         },
         options: {
@@ -61,7 +67,7 @@ window.updateAllocationChart = function (labels, data, colors, fullNames) {
                     labels: {
                         padding: 12,
                         boxWidth: 14,
-                        color: '#94a3b8',
+                        color: ptColor('--pt-text-muted', '#94a3b8'),
                         font: {
                             size: 11,
                             family: "Inter, system-ui, sans-serif"
@@ -69,10 +75,10 @@ window.updateAllocationChart = function (labels, data, colors, fullNames) {
                     }
                 },
                 tooltip: {
-                    backgroundColor: '#151e32',
-                    titleColor: '#f1f5f9',
-                    bodyColor: '#f1f5f9',
-                    borderColor: '#2a3b55',
+                    backgroundColor: ptColor('--pt-surface', '#151e32'),
+                    titleColor: ptColor('--pt-text', '#f1f5f9'),
+                    bodyColor: ptColor('--pt-text', '#f1f5f9'),
+                    borderColor: ptColor('--pt-border', '#2a3b55'),
                     borderWidth: 1,
                     padding: 12,
                     callbacks: {

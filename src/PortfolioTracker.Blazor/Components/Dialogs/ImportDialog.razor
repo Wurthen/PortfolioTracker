@@ -20,12 +20,12 @@
     }
 }
 
-<div class="modal fade @(IsVisible ? "show d-block" : "")" tabindex="-1" style="background-color: rgba(0,0,0,0.7);">
+<div class="modal fade @(IsVisible ? "show d-block" : "")" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="importModalTitle" style="background-color: rgba(0,0,0,0.7);">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">@Title</h5>
-                <button type="button" class="btn-close" @onclick="Close"></button>
+                <h5 class="modal-title" id="importModalTitle">@Title</h5>
+                <button type="button" class="btn-close" aria-label="Cerrar" @onclick="Close"></button>
             </div>
             <div class="modal-body">
                 <div class="alert alert-info mb-0">

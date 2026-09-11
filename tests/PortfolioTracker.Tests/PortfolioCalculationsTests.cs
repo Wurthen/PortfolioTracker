@@ -49,6 +49,22 @@ public class PortfolioServiceTests
         Assert.Equal(expected, avg);
     }
 
+    [Fact]
+    public void ComputeSafeBackPrice_DilutesPriceButKeepsCostBasis()
+    {
+        // 10 shares @ 100 = 1000 cost; 2 SafeBack shares arrive at zero cost.
+        var price = PortfolioService.ComputeSafeBackPrice(existingShares: 10m, existingAvgPrice: 100m, safeBackShares: 2m);
+
+        Assert.Equal(1000m / 12m, price, 8);
+        Assert.Equal(1000m, price * 12m, 6); // Shares * PurchasePrice is unchanged.
+    }
+
+    [Fact]
+    public void ComputeSafeBackPrice_ZeroExistingShares_ReturnsZero()
+    {
+        Assert.Equal(0m, PortfolioService.ComputeSafeBackPrice(0m, 100m, 2m));
+    }
+
     [Theory]
     [InlineData("aapl", "AAPL")]
     [InlineData("0P0000X09U.F", "0P0000X09U")]
@@ -71,6 +87,66 @@ public class PortfolioServiceTests
         Assert.Equal(25.50m, dto.SafeBackAmount);
         Assert.Equal(0.75m, dto.SafeBackShares);
     }
+
+    [Fact]
+    public void ComputeSinceInception_ExcludesUnpricedFromNumeratorAndDenominator()
+    {
+        var priced = PortfolioService.MapToDto(MakeItem(), currentPriceUsd: 100m, usdToEur: 1m);   // 1000 value vs 1005 cost
+        var unpriced = PortfolioService.MapToDto(MakeItem(), currentPriceUsd: null, usdToEur: 1m);
+
+        var result = PortfolioService.ComputeSinceInception([priced, unpriced]);
+
+        Assert.Equal(1005m, result.CostBasis);
+        Assert.Equal(-5m, result.GainLoss);
+        Assert.Equal(-5m / 1005m * 100m, result.GainLossPercent);
+    }
+
+    [Fact]
+    public void ComputeSinceInception_MatchesPerItemGainLossPercent()
+    {
+        var dto = PortfolioService.MapToDto(MakeItem(), currentPriceUsd: 120m, usdToEur: 1m);
+
+        var result = PortfolioService.ComputeSinceInception([dto]);
+
+        Assert.Equal(dto.GainLossPercent, result.GainLossPercent);
+    }
+
+    [Fact]
+    public void ComputeSinceInception_Empty_ReturnsZero()
+    {
+        var result = PortfolioService.ComputeSinceInception([]);
+
+        Assert.Equal(0m, result.CostBasis);
+        Assert.Equal(0m, result.GainLoss);
+        Assert.Equal(0m, result.GainLossPercent);
+    }
+}
+
+public class SymbolClassifierTests
+{
+    [Theory]
+    [InlineData("0P0000X09U", true)]
+    [InlineData("0p0000x09u.f", true)]
+    [InlineData("IE00B03HCZ61.EUFUND", true)]
+    [InlineData("AAPL", false)]
+    [InlineData("VUSA.L", false)]
+    public void IsFund_ClassifiesFundSymbols(string symbol, bool expected)
+        => Assert.Equal(expected, SymbolClassifier.IsFund(symbol));
+
+    [Theory]
+    [InlineData("0P0000X09U.F", "0P0000X09U")]
+    [InlineData("0p0000x09u.de", "0p0000x09u")]
+    [InlineData("AAPL", "AAPL")]
+    [InlineData("IE00B03HCZ61.EUFUND", "IE00B03HCZ61.EUFUND")]
+    public void StripExchangeSuffix_OnlyTouchesMorningstarSymbols(string input, string expected)
+        => Assert.Equal(expected, SymbolClassifier.StripExchangeSuffix(input));
+
+    [Theory]
+    [InlineData("IE00B03HCZ61.EUFUND", "IE00B03HCZ61")]
+    [InlineData("ie00b03hcz61.eufund", "ie00b03hcz61")]
+    [InlineData("AAPL", "AAPL")]
+    public void WithoutEufundSuffix_RemovesSuffixOnly(string input, string expected)
+        => Assert.Equal(expected, SymbolClassifier.WithoutEufundSuffix(input));
 }
 
 public class HistoryBackfillParseTests
@@ -104,5 +180,37 @@ public class HistoryBackfillParseTests
 
         Assert.Equal(89.72m, parsed!.Value);
         Assert.True(parsed.Value < 100m);
+    }
+}
+
+public class HistoryBackfillReplayTests
+{
+    [Fact]
+    public void SharesHeldAt_IncludesSafeBackShares()
+    {
+        var itemId = Guid.NewGuid();
+        var txs = new List<PortfolioTransaction>
+        {
+            new() { ItemId = itemId, Type = "Buy", Date = new DateTime(2026, 1, 1), Shares = 10m },
+            new() { ItemId = itemId, Type = "SafeBack", Date = new DateTime(2026, 1, 10), Shares = 2m }
+        };
+
+        Assert.Equal(10m, HistoryBackfillService.SharesHeldAt(txs, new DateTime(2026, 1, 5)));
+        Assert.Equal(12m, HistoryBackfillService.SharesHeldAt(txs, new DateTime(2026, 1, 10)));
+        Assert.Equal(12m, HistoryBackfillService.SharesHeldAt(txs, new DateTime(2026, 2, 1)));
+    }
+
+    [Fact]
+    public void SharesHeldAt_SubtractsSellsAndTransfersOut()
+    {
+        var itemId = Guid.NewGuid();
+        var txs = new List<PortfolioTransaction>
+        {
+            new() { ItemId = itemId, Type = "Buy", Date = new DateTime(2026, 1, 1), Shares = 10m },
+            new() { ItemId = itemId, Type = "Sell", Date = new DateTime(2026, 1, 5), Shares = 3m },
+            new() { ItemId = itemId, Type = "TransferOut", Date = new DateTime(2026, 1, 6), Shares = 2m }
+        };
+
+        Assert.Equal(5m, HistoryBackfillService.SharesHeldAt(txs, new DateTime(2026, 1, 7)));
     }
 }

@@ -98,9 +98,9 @@
                             <div class="col-6 col-md-4 col-lg">
                                 <div class="p-2 rounded" style="background-color: var(--pt-bg);">
                                     <div class="small text-muted mb-1">@p.Label</div>
-                                    @if (p.MwrPct.HasValue)
+                                    @if (PeriodReturn(p) is { } periodReturn)
                                     {
-                                        <div class="h5 fw-bold mb-0 @GetGainLossClass(p.MwrPct.Value)">@p.MwrPct.Value.ToString("+0.00;-0.00;0.00")%</div>
+                                        <div class="h5 fw-bold mb-0 @GetGainLossClass(periodReturn)">@periodReturn.ToString("+0.00;-0.00;0.00")%</div>
                                     }
                                     else
                                     {
@@ -118,18 +118,23 @@
             <div class="col-lg-8">
                 <div class="card h-100">
                     <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-3">
-                        <h5 class="pt-section-title">Evolución del valor</h5>
+                        <h5 class="pt-section-title">@(ShowReturnChart ? "Rentabilidad acumulada" : "Evolución del valor")</h5>
                         <div class="d-flex align-items-center gap-2 flex-wrap">
-                            @if (History == null || History.Total.Count < 2)
-                            {
-                                <button type="button" class="btn btn-sm btn-outline-info" @onclick="RunBackfill" disabled="@isBackfilling">
-                                    @if (isBackfilling)
-                                    {
-                                        <span class="spinner-border spinner-border-sm me-1"></span>
-                                    }
-                                    Cargar histórico 12m
-                                </button>
-                            }
+                            <button type="button" class="btn btn-sm btn-outline-info"
+                                    @onclick="() => RunBackfill(History != null && History.Total.Count >= 2)"
+                                    disabled="@isBackfilling">
+                                @if (isBackfilling)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-1"></span>
+                                }
+                                @(History != null && History.Total.Count >= 2 ? "Recalcular histórico" : "Cargar histórico 12m")
+                            </button>
+                            <div class="btn-group" role="group">
+                                <button type="button" class="btn btn-sm @(ShowReturnChart ? "btn-outline-secondary" : "btn-outline-primary active")"
+                                        @onclick="() => ShowReturnChart = false">Valor</button>
+                                <button type="button" class="btn btn-sm @(ShowReturnChart ? "btn-outline-primary active" : "btn-outline-secondary")"
+                                        @onclick="() => ShowReturnChart = true">Rentabilidad</button>
+                            </div>
                             <div class="btn-group" role="group">
                                 @foreach (var period in Periods)
                                 {
@@ -145,23 +150,34 @@
                         @if (History != null)
                         {
                             <div class="d-flex align-items-center gap-3 mb-4">
-                                <span class="display-5 fw-bold lh-1 @GetGainLossClass(PeriodChangePercent)">
-                                    @(FilteredTotalPoints.Count >= 2 ? $"{PeriodChangePercent.ToString("+0.00;-0.00;0.00")}%" : "—")
-                                </span>
-                                <div class="small">
-                                    <div class="fw-semibold">@PerfLabelForPeriod en el periodo</div>
-                                    <div class="text-muted">
-                                        @if (FilteredTotalPoints.Count >= 2)
-                                        {
-                                            @($"{PeriodChangeEur.ToString("+#,##0.00;-#,##0.00;0.00")}")
-                                            @:€
-                                        }
-                                        else
-                                        {
-                                            @:Sin datos
-                                        }
+                                @if (ShowReturnChart)
+                                {
+                                    <span class="display-5 fw-bold lh-1 @GetGainLossClass(PeriodChangePercent)">
+                                        @(ActiveChartPoints.Count >= 2 ? $"{PeriodChangePercent.ToString("+0.00;-0.00;0.00")}%" : "—")
+                                    </span>
+                                    <div class="small">
+                                        <div class="fw-semibold">@PerfLabelForPeriod en el periodo</div>
+                                        <div class="text-muted">
+                                            @(ActiveChartPoints.Count >= 2
+                                                ? (IsFullHistoryWindow
+                                                    ? "Rentabilidad simple desde inicio (ganancia ÷ invertido)"
+                                                    : "Rentabilidad TWR (sin efecto de aportaciones)")
+                                                : "Sin datos")
+                                        </div>
                                     </div>
-                                </div>
+                                }
+                                else
+                                {
+                                    <span class="display-5 fw-bold lh-1 @GetGainLossClass(PeriodChangeEur)">
+                                        @(ActiveChartPoints.Count >= 2 ? $"{PeriodChangeEur.ToString("+#,##0.00;-#,##0.00;0.00")} €" : "—")
+                                    </span>
+                                    <div class="small">
+                                        <div class="fw-semibold">@PerfLabelForPeriod en el periodo</div>
+                                        <div class="text-muted">
+                                            @(ActiveChartPoints.Count >= 2 ? "Cambio de valor (aportaciones incluidas)" : "Sin datos")
+                                        </div>
+                                    </div>
+                                }
                                 <span class="ms-auto text-muted small">@PeriodRangeText</span>
                             </div>
 
@@ -173,7 +189,7 @@
                             }
                             else
                             {
-                                <PortfolioChart Points="FilteredTotalPoints" />
+                                <PortfolioChart Points="ActiveChartPoints" IsReturn="ShowReturnChart" />
                             }
                         }
                         else
@@ -317,16 +333,20 @@
     var series = History != null && History.Items.TryGetValue(detailItem.Id.ToString(), out var s)
         ? s
         : new List<HistoryPointDto>();
+    var returnSeries = History != null && History.ItemReturns.TryGetValue(detailItem.Id.ToString(), out var r)
+        ? r
+        : new List<HistoryPointDto>();
+    var activeDetailSeries = detailShowReturn ? returnSeries : series;
     var weight = TotalValue > 0 ? detailItem.CurrentValue / TotalValue * 100 : 0;
-    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.7);">
+    <div class="modal fade show d-block" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="detailModalTitle" style="background-color: rgba(0,0,0,0.7);">
         <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">
+                    <h5 class="modal-title" id="detailModalTitle">
                         @detailItem.Name
                         <small class="text-muted fw-normal">(@detailItem.Symbol)</small>
                     </h5>
-                    <button type="button" class="btn-close" @onclick="CloseDetail"></button>
+                    <button type="button" class="btn-close" aria-label="Cerrar" @onclick="CloseDetail"></button>
                 </div>
                 <div class="modal-body">
                     <div class="text-muted small mb-3">
@@ -375,7 +395,15 @@
                             </div>
                         }
                     </div>
-                    <PortfolioChart Points="series" />
+                    <div class="d-flex justify-content-end mb-3">
+                        <div class="btn-group" role="group">
+                            <button type="button" class="btn btn-sm @(detailShowReturn ? "btn-outline-secondary" : "btn-outline-primary active")"
+                                    @onclick="() => detailShowReturn = false">Valor</button>
+                            <button type="button" class="btn btn-sm @(detailShowReturn ? "btn-outline-primary active" : "btn-outline-secondary")"
+                                    @onclick="() => detailShowReturn = true">Rentabilidad</button>
+                        </div>
+                    </div>
+                    <PortfolioChart Points="activeDetailSeries" IsReturn="detailShowReturn" />
 
                     <h6 class="mt-4 mb-2">Operaciones</h6>
                     @if (itemTransactions.Count > 0)
@@ -416,12 +444,12 @@
 
 @if (showDeleteConfirm && itemToDelete != null)
 {
-    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.7);">
+    <div class="modal fade show d-block" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="deleteModalTitle" style="background-color: rgba(0,0,0,0.7);">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Eliminar inversión</h5>
-                    <button type="button" class="btn-close" @onclick="CancelDelete"></button>
+                    <h5 class="modal-title" id="deleteModalTitle">Eliminar inversión</h5>
+                    <button type="button" class="btn-close" aria-label="Cerrar" @onclick="CancelDelete"></button>
                 </div>
                 <div class="modal-body">
                     <p>¿Seguro que quieres eliminar <strong>@itemToDelete.Symbol</strong> de tu cartera?</p>
@@ -460,6 +488,7 @@
     private PortfolioPerformanceDto? Performance { get; set; }
     private PortfolioHistoryResponseDto? History { get; set; }
     private string SelectedPeriod { get; set; } = "1d";
+    private bool ShowReturnChart { get; set; } = true;
     private bool IsLoading { get; set; } = true;
     private bool showAddDialog { get; set; } = false;
     private bool showEditDialog { get; set; } = false;
@@ -470,6 +499,7 @@
 
     private PortfolioItemDto? detailItem;
     private bool showDetailModal { get; set; } = false;
+    private bool detailShowReturn { get; set; }
     private bool isBackfilling = false;
     private bool showTransferDialog { get; set; } = false;
     private DetailedPerformanceDto? DetailedPerf { get; set; }
@@ -492,6 +522,7 @@
     private void ShowDetail(PortfolioItemDto item)
     {
         detailItem = item;
+        detailShowReturn = false;
         showDetailModal = true;
         itemTransactions = [];
         _ = LoadItemTransactionsAsync(item.Id);
@@ -499,11 +530,18 @@
 
     private async Task LoadItemTransactionsAsync(Guid itemId)
     {
-        var txs = await ApiService.GetItemTransactionsAsync(UserIdService.UserId, itemId);
-        if (detailItem?.Id == itemId)
+        try
         {
-            itemTransactions = txs;
-            await InvokeAsync(StateHasChanged);
+            var txs = await ApiService.GetItemTransactionsAsync(UserIdService.UserId, itemId);
+            if (detailItem?.Id == itemId)
+            {
+                itemTransactions = txs;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load transactions for item {ItemId}", itemId);
         }
     }
 
@@ -513,12 +551,12 @@
         showDetailModal = false;
     }
 
-    private async Task RunBackfill()
+    private async Task RunBackfill(bool rebuild)
     {
         isBackfilling = true;
         try
         {
-            var result = await ApiService.BackfillHistoryAsync(UserIdService.UserId);
+            var result = await ApiService.BackfillHistoryAsync(UserIdService.UserId, rebuild);
             if (result != null)
             {
                 var ok = result.Items.Count(i => i.Status == "ok" || i.Status == "up-to-date");
@@ -534,7 +572,7 @@
         catch (Exception ex)
         {
             Logger.LogError(ex, "Backfill failed");
-            ShowError($"Error al cargar histórico: {ex.Message}");
+            ShowError("No se pudo cargar el histórico.");
         }
         finally
         {
@@ -602,40 +640,94 @@
         ("1d", "1D"), ("7d", "1S"), ("1m", "1M"), ("3m", "3M"), ("6m", "6M"), ("ytd", "YTD"), ("1y", "1A")
     ];
 
-    private List<HistoryPointDto> FilteredTotalPoints
+    private List<HistoryPointDto> FilteredTotalPoints => FilterSeries(History?.Total, SelectedPeriod);
+    private List<HistoryPointDto> FilteredReturnPoints => FilterSeries(History?.TotalReturn, SelectedPeriod);
+    private List<HistoryPointDto> FilteredSimpleReturnPoints => FilterSeries(History?.TotalSimpleReturn, SelectedPeriod);
+
+    // True when the selected window reaches back to the very first history point.
+    // In that case "rentabilidad" must be the simple since-inception return (the same
+    // figure as the "Ganancia / Pérdida" KPI), not the TWR, so the two never disagree.
+    private bool IsFullHistoryWindow
     {
         get
         {
-            if (History == null || History.Total.Count == 0)
-                return [];
+            if (SelectedPeriod is not ("ytd" or "1y"))
+                return false;
 
-            var sorted = History.Total.OrderBy(p => p.Date).ToList();
+            var all = History?.Total;
+            if (all == null || all.Count == 0)
+                return false;
 
-            // 1D = latest point vs the previous available day (weekend/NAV lag included),
-            // never the "not enough data" placeholder.
-            if (SelectedPeriod == "1d")
-                return sorted.Count == 1 ? [sorted[^1]] : [sorted[^2], sorted[^1]];
-
-            var cutoff = SelectedPeriod switch
-            {
-                "7d" => DateTime.UtcNow.Date.AddDays(-7),
-                "1m" => DateTime.UtcNow.Date.AddDays(-30),
-                "3m" => DateTime.UtcNow.Date.AddDays(-90),
-                "6m" => DateTime.UtcNow.Date.AddDays(-180),
-                "ytd" => new DateTime(DateTime.UtcNow.Year, 1, 1),
-                "1y" => DateTime.UtcNow.Date.AddDays(-365),
-                _ => DateTime.MinValue
-            };
-            return sorted.Where(p => p.Date >= cutoff).ToList();
+            var first = all.OrderBy(p => p.Date).First().Date;
+            var cutoff = SelectedPeriod == "ytd"
+                ? new DateTime(DateTime.UtcNow.Year, 1, 1)
+                : DateTime.UtcNow.Date.AddDays(-365);
+            return first >= cutoff;
         }
+    }
+
+    private List<HistoryPointDto> ActiveChartPoints => ShowReturnChart
+        ? (IsFullHistoryWindow ? FilteredSimpleReturnPoints : FilteredReturnPoints)
+        : FilteredTotalPoints;
+
+    private static List<HistoryPointDto> FilterSeries(List<HistoryPointDto>? series, string period)
+    {
+        if (series == null || series.Count == 0)
+            return [];
+
+        var sorted = series.OrderBy(p => p.Date).ToList();
+
+        // 1D = latest point vs the previous available day (weekend/NAV lag included),
+        // never the "not enough data" placeholder.
+        if (period == "1d")
+            return sorted.Count == 1 ? [sorted[^1]] : [sorted[^2], sorted[^1]];
+
+        var cutoff = period switch
+        {
+            "7d" => DateTime.UtcNow.Date.AddDays(-7),
+            "1m" => DateTime.UtcNow.Date.AddDays(-30),
+            "3m" => DateTime.UtcNow.Date.AddDays(-90),
+            "6m" => DateTime.UtcNow.Date.AddDays(-180),
+            "ytd" => new DateTime(DateTime.UtcNow.Year, 1, 1),
+            "1y" => DateTime.UtcNow.Date.AddDays(-365),
+            _ => DateTime.MinValue
+        };
+        return sorted.Where(p => p.Date >= cutoff).ToList();
+    }
+
+    // Compounds the TWR points of a window; shared by the chart headline and the
+    // "Rentabilidad por periodo" cards so both always show the same number.
+    private static decimal ComputeSeriesWindowReturn(List<HistoryPointDto> pts)
+    {
+        var start = pts[0].Value;
+        var end = pts[^1].Value;
+        if (start <= -100m)
+            return 0m;
+        return decimal.Round(((1 + end / 100m) / (1 + start / 100m) - 1) * 100m, 2);
     }
 
     private decimal PeriodChangePercent
     {
         get
         {
-            var pts = FilteredTotalPoints;
-            if (pts.Count == 0 || pts[0].Value == 0)
+            var pts = ActiveChartPoints;
+            if (pts.Count == 0)
+                return 0;
+
+            if (ShowReturnChart)
+            {
+                // A full-history window is the same figure as the Gain/Loss KPI; the
+                // TWR is only meaningful for bounded windows where it removes the
+                // distorting effect of contributions made inside the period.
+                if (IsFullHistoryWindow)
+                    return TotalGainLossPercent;
+
+                // TWR is stored as cumulative percentage; compute the sub-period return
+                // by compounding from the first to the last point of the filtered window.
+                return ComputeSeriesWindowReturn(pts);
+            }
+
+            if (pts[0].Value == 0)
                 return 0;
             return (pts[^1].Value - pts[0].Value) / pts[0].Value * 100;
         }
@@ -645,7 +737,7 @@
     {
         get
         {
-            var pts = FilteredTotalPoints;
+            var pts = ActiveChartPoints;
             return pts.Count >= 2 ? pts[^1].Value - pts[0].Value : 0;
         }
     }
@@ -715,7 +807,7 @@
     {
         get
         {
-            var pts = FilteredTotalPoints;
+            var pts = ActiveChartPoints;
             if (pts.Count == 0)
                 return "Sin datos";
             var label = Periods.First(p => p.Key == SelectedPeriod).Label;
@@ -727,7 +819,21 @@
 
     private decimal TotalValue => PortfolioItems.Sum(p => p.CurrentValue);
     private decimal TotalGainLoss => PortfolioItems.Sum(p => p.GainLoss);
-    private decimal TotalGainLossPercent => PortfolioItems.Count > 0 ? (TotalGainLoss / (PortfolioItems.Sum(p => p.Shares * p.PurchasePrice))) * 100 : 0;
+
+    // Single source of truth computed server-side (PortfolioService.ComputeSinceInception):
+    // both this KPI and the "Desde inicio" period card read the same value.
+    private decimal TotalGainLossPercent => Performance?.SinceInceptionGainLossPercent ?? 0;
+
+    // "Desde inicio" is exactly the since-inception KPI; bounded windows compound the
+    // same TWR series the chart plots, so the period card and the chart never disagree.
+    private decimal? PeriodReturn(PeriodPerformanceDto period)
+    {
+        if (period.Label.StartsWith("Desde inicio"))
+            return TotalGainLossPercent;
+
+        var pts = FilterSeries(History?.TotalReturn, period.Key);
+        return pts.Count >= 2 ? ComputeSeriesWindowReturn(pts) : null;
+    }
 
     private string TotalGainLossClass => GetGainLossClass(TotalGainLoss);
 
@@ -740,11 +846,16 @@
         }
     }
 
+    // Serializes refreshes: overlapping calls (dialog callbacks, backfill, renders)
+    // must not race and let the slowest response win.
+    private readonly SemaphoreSlim _refreshLock = new(1, 1);
+
     private async Task RefreshPortfolio()
     {
         if (UserIdService.UserId == Guid.Empty)
             return;
 
+        await _refreshLock.WaitAsync();
         IsLoading = true;
         try
         {
@@ -768,12 +879,13 @@
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error loading portfolio");
-            ShowError($"Error loading portfolio: {ex.Message}");
+            ShowError("No se pudo cargar la cartera. Inténtalo de nuevo.");
             PortfolioItems = [];
         }
         finally
         {
             IsLoading = false;
+            _refreshLock.Release();
         }
     }
 
@@ -825,14 +937,21 @@
         isDeleting = true;
         try
         {
-            await ApiService.DeleteItemAsync(itemToDelete.Id, UserIdService.UserId);
+            var deleted = await ApiService.DeleteItemAsync(itemToDelete.Id, UserIdService.UserId);
+            if (!deleted)
+            {
+                Logger.LogWarning("Delete failed for item {ItemId}", itemToDelete.Id);
+                ShowError("No se pudo eliminar la inversión.");
+                return;
+            }
+
             await RefreshPortfolio();
             CancelDelete();
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error deleting item");
-            ShowError($"Error deleting: {ex.Message}");
+            ShowError("No se pudo eliminar la inversión.");
         }
         finally
         {

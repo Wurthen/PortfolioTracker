@@ -1,12 +1,13 @@
 @inject PortfolioApiService ApiService
 @inject IJSRuntime JS
+@inject ILogger<AddItemDialog> Logger
 
-<div class="modal fade @(IsVisible ? "show d-block" : "")" tabindex="-1" style="background-color: rgba(0,0,0,0.7);">
+<div class="modal fade @(IsVisible ? "show d-block" : "")" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="addItemModalTitle" style="background-color: rgba(0,0,0,0.7);">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">@(SymbolSelected ? "Añadir compra" : "Nueva inversión")</h5>
-                <button type="button" class="btn-close" @onclick="Close"></button>
+                <h5 class="modal-title" id="addItemModalTitle">@(SymbolSelected ? "Añadir compra" : "Nueva inversión")</h5>
+                <button type="button" class="btn-close" aria-label="Cerrar" @onclick="Close"></button>
             </div>
             <div class="modal-body">
                 @if (!SymbolSelected)
@@ -194,7 +195,7 @@
     private bool HasError { get; set; }
     private string ErrorMessage { get; set; } = "";
 
-    private bool IsFund => SelectedSymbol?.Type.Equals("Fund", StringComparison.OrdinalIgnoreCase) == true;
+    private bool IsFund => string.Equals(SelectedSymbol?.Type, "Fund", StringComparison.OrdinalIgnoreCase);
 
     private async Task Search()
     {
@@ -260,12 +261,19 @@
         UseAlternativeSymbol = existing.UseAlternativeSymbol;
     }
 
+    private Guid? _appliedPreselectedId;
+
     public override async Task SetParametersAsync(ParameterView parameters)
     {
         await base.SetParametersAsync(parameters);
 
-        if (PreselectedExistingItemId.HasValue && PreselectedExistingItemId.Value != Guid.Empty)
+        // Apply the preselection only when it changes, so a re-render of the parent
+        // does not revert the mode the user just switched to.
+        if (PreselectedExistingItemId.HasValue &&
+            PreselectedExistingItemId.Value != Guid.Empty &&
+            PreselectedExistingItemId != _appliedPreselectedId)
         {
+            _appliedPreselectedId = PreselectedExistingItemId;
             IsNewMode = false;
             SelectedExistingItemId = PreselectedExistingItemId.Value.ToString();
         }
@@ -313,8 +321,9 @@
         }
         catch (Exception ex)
         {
+            Logger.LogError(ex, "Error adding portfolio item");
             HasError = true;
-            ErrorMessage = $"Error: {ex.Message}";
+            ErrorMessage = "No se pudo añadir la inversión. Inténtalo de nuevo.";
         }
         finally
         {
@@ -331,6 +340,7 @@
         SelectedSymbol = null;
         SelectedExistingItemId = "";
         IsNewMode = true;
+        _appliedPreselectedId = null;
         Shares = 0;
         PurchasePrice = 0;
         PurchaseDate = null;

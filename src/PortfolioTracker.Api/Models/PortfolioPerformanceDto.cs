@@ -2,9 +2,10 @@ namespace PortfolioTracker.Api.Models;
 
 public class PortfolioPerformanceDto
 {
-    public decimal Daily { get; set; }
-    public decimal Weekly { get; set; }
-    public decimal Monthly { get; set; }
-    public decimal Ytd { get; set; }
-    public decimal Yearly { get; set; }
+    // Simple (non-time-weighted) return since inception over the cost basis of
+    // currently priced positions. Single source of truth for both the dashboard
+    // "Ganancia / Pérdida" KPI and the "Desde inicio" period card.
+    public decimal SinceInceptionCostBasis { get; set; }
+    public decimal SinceInceptionGainLoss { get; set; }
+    public decimal SinceInceptionGainLossPercent { get; set; }
 }

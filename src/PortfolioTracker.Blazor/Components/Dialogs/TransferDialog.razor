@@ -1,12 +1,12 @@
 @inject PortfolioApiService ApiService
 @inject ILogger<TransferDialog> Logger
 
-<div class="modal fade @(IsVisible ? "show d-block" : "")" tabindex="-1" style="background-color: rgba(0,0,0,0.7);">
+<div class="modal fade @(IsVisible ? "show d-block" : "")" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="transferModalTitle" style="background-color: rgba(0,0,0,0.7);">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Traspaso entre fondos</h5>
-                <button type="button" class="btn-close" @onclick="Close"></button>
+                <h5 class="modal-title" id="transferModalTitle">Traspaso entre fondos</h5>
+                <button type="button" class="btn-close" aria-label="Cerrar" @onclick="Close"></button>
             </div>
             <div class="modal-body">
                 <div class="alert alert-info small">
@@ -19,7 +19,7 @@
                         <label class="form-label">Fondo origen</label>
                         <select class="form-select" @bind="FromItemId">
                             <option value="">Seleccionar...</option>
-                            @foreach (var item in Items)
+                            @foreach (var item in FundItems)
                             {
                                 <option value="@item.Id">@item.Name (@item.Symbol) - @item.CurrentValue.ToString("N2") €</option>
                             }
@@ -29,7 +29,7 @@
                         <label class="form-label">Fondo destino</label>
                         <select class="form-select" @bind="ToItemId">
                             <option value="">Seleccionar...</option>
-                            @foreach (var item in Items)
+                            @foreach (var item in FundItems)
                             {
                                 <option value="@item.Id">@item.Name (@item.Symbol)</option>
                             }
@@ -100,12 +100,30 @@
 
     private PortfolioItemDto? FromItem => Items.FirstOrDefault(i => i.Id == FromItemId);
 
+    // Spanish fund transfers ("traspasos") only apply to mutual funds.
+    private IEnumerable<PortfolioItemDto> FundItems
+        => Items.Where(i => string.Equals(i.Type, "Fund", StringComparison.OrdinalIgnoreCase));
+
     private async Task Save()
     {
         if (FromItemId == Guid.Empty || ToItemId == Guid.Empty || AmountEur <= 0)
         {
             HasError = true;
             ErrorMessage = "Rellena origen, destino e importe.";
+            return;
+        }
+
+        if (FromItemId == ToItemId)
+        {
+            HasError = true;
+            ErrorMessage = "El fondo de origen y el de destino deben ser distintos.";
+            return;
+        }
+
+        if (FromItem != null && FromItem.CurrentValue > 0 && AmountEur > FromItem.CurrentValue)
+        {
+            HasError = true;
+            ErrorMessage = $"El importe no puede superar el valor actual del fondo de origen ({FromItem.CurrentValue.ToString("N2")} €).";
             return;
         }
 
@@ -135,8 +153,9 @@
         }
         catch (Exception ex)
         {
+            Logger.LogError(ex, "Transfer failed for user {UserId}", UserId);
             HasError = true;
-            ErrorMessage = $"Error: {ex.Message}";
+            ErrorMessage = "No se pudo completar el traspaso. Inténtalo de nuevo.";
         }
         finally
         {

@@ -49,8 +49,6 @@ public class PeriodPerformanceDto
 {
     public string Key { get; set; } = "";
     public string Label { get; set; } = "";
-    public decimal SimplePct { get; set; }
-    public decimal? MwrPct { get; set; }
 }
 
 public class DetailedPerformanceDto
@@ -185,10 +183,13 @@ public class TransactionService
             return null;
 
         var usdToEur = await _currencyService.GetUsdToEurRateAsync();
-        var currentPriceUsd = await _yahooFinanceService.GetCurrentPriceAsync(
-            item.UseAlternativeSymbol && !string.IsNullOrWhiteSpace(item.AlternativeSymbol)
-                ? item.AlternativeSymbol
-                : item.Symbol);
+        var useAlternative = item.UseAlternativeSymbol && !string.IsNullOrWhiteSpace(item.AlternativeSymbol);
+        var currentPriceUsd = await _yahooFinanceService.GetCurrentPriceAsync(useAlternative ? item.AlternativeSymbol! : item.Symbol);
+        if (!currentPriceUsd.HasValue && useAlternative)
+        {
+            // EOD-specific alternative symbol failed: retry the primary symbol path.
+            currentPriceUsd = await _yahooFinanceService.GetCurrentPriceAsync(item.Symbol);
+        }
         if (!currentPriceUsd.HasValue || currentPriceUsd.Value <= 0 || usdToEur <= 0)
             return null;
 
@@ -210,12 +211,11 @@ public class TransactionService
             Commission = 0
         };
 
-        // SafeBack is cash that buys shares at market price: treat it like a Buy for the position,
-        // but track the cash received separately as SafeBack income.
-        var totalShares = item.Shares + tx.Shares;
-        var totalCost = item.Shares * item.PurchasePrice + tx.AmountEur;
-        item.PurchasePrice = totalShares > 0 ? totalCost / totalShares : 0;
-        item.Shares = totalShares;
+        // SafeBack is cash received that is reinvested at market price. It increases shares
+        // without increasing cost basis, so it is treated as return rather than a purchase.
+        // Diluting the average price keeps Shares * PurchasePrice (cost basis) unchanged.
+        item.PurchasePrice = PortfolioService.ComputeSafeBackPrice(item.Shares, item.PurchasePrice, tx.Shares);
+        item.Shares += tx.Shares;
         item.SafeBackAmount += tx.AmountEur;
         item.SafeBackShares += tx.Shares;
         item.UpdatedAt = DateTime.UtcNow;
@@ -337,22 +337,24 @@ public class TransactionService
         if (totals.Count >= 2)
         {
             var last = totals[^1];
+            // Keys mirror the chart's windows so the UI can derive each card from the
+            // same TWR series it plots.
             var periods = new (string Key, string Label, int Days)[]
             {
-                ("daily", "1D", 1), ("weekly", "1S", 7), ("monthly", "1M", 30),
-                ("quarterly", "3M", 90), ("yearly", "1A", 365)
+                ("1d", "1D", 1), ("7d", "1S", 7), ("1m", "1M", 30),
+                ("3m", "3M", 90), ("1y", "1A", 365)
             };
 
             foreach (var (key, label, days) in periods)
             {
-                dto.Periods.Add(BuildPeriod(key, label, totals, last, last.Date.AddDays(-days), flows));
+                dto.Periods.Add(BuildPeriod(key, label, totals, last, last.Date.AddDays(-days)));
             }
 
             var jan1 = new DateTime(last.Date.Year, 1, 1, 0, 0, 0, DateTimeKind.Utc);
             var preYearPoint = totals.LastOrDefault(p => p.Date < jan1);
             // No data before Jan 1 => the calendar-YTD window predates the portfolio; measure since inception.
             var ytdBaselineDate = preYearPoint?.Date ?? DateTime.MinValue;
-            dto.Periods.Add(BuildPeriod("ytd", preYearPoint != null ? "YTD" : "Desde inicio", totals, last, ytdBaselineDate, flows));
+            dto.Periods.Add(BuildPeriod("ytd", preYearPoint != null ? "YTD" : "Desde inicio", totals, last, ytdBaselineDate));
 
             // When YTD/1A collapse into "Desde inicio" they would be identical rows; keep one per label.
             dto.Periods = dto.Periods
@@ -360,21 +362,10 @@ public class TransactionService
                 .Select(g => g.First())
                 .ToList();
 
-            // USER RULE: "Desde inicio" must equal the header's Total Gain/Loss %
-            // (total gain over total invested, no time weighting).
-            if (latestValues.Count > 0)
-            {
-                var totalCurrentValue = latestValues.Sum(p => p.ValueEur);
-                var totalInvested = items.Sum(i => i.Shares * i.PurchasePrice);
-                var totalGainLoss = totalCurrentValue - items.Sum(i => i.Shares * i.PurchasePrice + i.Commission);
-                var totalSimplePct = totalInvested > 0 ? totalGainLoss / totalInvested * 100m : 0m;
-
-                foreach (var p in dto.Periods.Where(p => p.Label.StartsWith("Desde inicio")))
-                {
-                    p.SimplePct = decimal.Round(totalSimplePct, 2);
-                    p.MwrPct = decimal.Round(totalSimplePct, 2);
-                }
-            }
+            // NOTE: the "Ganancia / Pérdida %" KPI and the "Desde inicio" period card
+            // share a single source of truth, PortfolioService.ComputeSinceInception,
+            // computed from live prices in the dashboard payload. Keeping no parallel
+            // formula here avoids the two numbers drifting apart.
         }
 
         if (flows.Count > 0)
@@ -388,27 +379,21 @@ public class TransactionService
         return dto;
     }
 
-    private static PeriodPerformanceDto BuildPeriod(string key, string label, List<PortfolioHistoryPoint> totals, PortfolioHistoryPoint last, DateTime baselineCutoff, List<(DateTime Date, decimal Flow)> flows)
+    // The period card only describes the window; its return is computed client-side from
+    // the same TWR series the chart plots, so both always show the same metric.
+    private static PeriodPerformanceDto BuildPeriod(string key, string label, List<PortfolioHistoryPoint> totals, PortfolioHistoryPoint last, DateTime baselineCutoff)
     {
-        var period = new PeriodPerformanceDto { Key = key, Label = label };
-
         var baseline = totals.LastOrDefault(p => p.Date <= baselineCutoff && p.Date < last.Date);
         if (baseline == null)
         {
             // Window starts before the portfolio existed: measure from inception instead.
             baseline = totals.FirstOrDefault(p => p.Date < last.Date);
             if (baseline == null)
-                return period;
-            period.Label = $"Desde inicio ({baseline.Date:dd/MM})";
+                return new PeriodPerformanceDto { Key = key, Label = label };
+            return new PeriodPerformanceDto { Key = key, Label = $"Desde inicio ({baseline.Date:dd/MM})" };
         }
 
-        period.SimplePct = baseline.ValueEur != 0
-            ? (last.ValueEur - baseline.ValueEur) / baseline.ValueEur * 100m
-            : 0;
-
-        var windowFlows = flows.Where(f => f.Date > baseline.Date && f.Date <= last.Date).ToList();
-        period.MwrPct = PerformanceCalculators.ModifiedDietz(baseline.ValueEur, last.ValueEur, windowFlows, baseline.Date, last.Date);
-        return period;
+        return new PeriodPerformanceDto { Key = key, Label = label };
     }
 
     private IQueryable<TransactionDto> Project(IQueryable<PortfolioTransaction> query) =>

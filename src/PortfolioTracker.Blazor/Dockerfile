@@ -7,7 +7,7 @@ WORKDIR /src
 COPY ["PortfolioTracker.Blazor.csproj", "./"]
 RUN dotnet restore "./PortfolioTracker.Blazor.csproj"
 COPY . .
-RUN dotnet publish "./PortfolioTracker.Blazor.csproj" -c Release -o /app/publish --no-build /p:UseAppHost=false
+RUN dotnet publish "./PortfolioTracker.Blazor.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
 FROM base AS final
 WORKDIR /app

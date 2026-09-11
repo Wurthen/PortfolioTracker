@@ -45,7 +45,11 @@ public class PortfolioService
                 return eodPrice.Value;
             }
 
-            _logger.LogWarning("EOD failed for alternative symbol {Symbol}, falling back to composite", item.AlternativeSymbol);
+            // The alternative symbol is EOD-specific; the composite chain must be
+            // retried with the item's primary symbol, not with the same alternative.
+            _logger.LogWarning("EOD failed for alternative symbol {Symbol}, falling back to composite with primary symbol {PrimarySymbol}",
+                item.AlternativeSymbol, item.Symbol);
+            return await _yahooFinanceService.GetCurrentPriceAsync(item.Symbol);
         }
 
         return await _yahooFinanceService.GetCurrentPriceAsync(symbol);
@@ -55,6 +59,13 @@ public class PortfolioService
         => existingShares + addedShares > 0
             ? ((existingShares * existingAvgPrice) + addedCostEur) / (existingShares + addedShares)
             : 0;
+
+    /// <summary>
+    /// Dilutes the average purchase price when SafeBack shares are added at zero cost,
+    /// so Shares * PurchasePrice (the position's cost basis) stays unchanged.
+    /// </summary>
+    public static decimal ComputeSafeBackPrice(decimal existingShares, decimal existingAvgPrice, decimal safeBackShares)
+        => ComputeWeightedAveragePrice(existingShares, existingAvgPrice, safeBackShares, 0m);
 
     public static PortfolioItemDto MapToDto(PortfolioItem item, decimal? currentPriceUsd, decimal usdToEur)
     {
@@ -91,6 +102,21 @@ public class PortfolioService
         };
     }
 
+    /// <summary>
+    /// Simple (non-time-weighted) since-inception return over the cost basis of
+    /// currently priced positions. Unavailable prices are excluded from both the
+    /// numerator and the denominator so they never dilute or fake the return.
+    /// </summary>
+    public static (decimal CostBasis, decimal GainLoss, decimal GainLossPercent) ComputeSinceInception(IEnumerable<PortfolioItemDto> items)
+    {
+        var priced = items.Where(i => i.PriceAvailable).ToList();
+        var costBasis = priced.Sum(i => (i.Shares * i.PurchasePrice) + i.Commission);
+        var currentValue = priced.Sum(i => i.CurrentValue);
+        var gainLoss = currentValue - costBasis;
+        var gainLossPercent = costBasis > 0 ? gainLoss / costBasis * 100m : 0m;
+        return (costBasis, gainLoss, gainLossPercent);
+    }
+
     public async Task<List<PortfolioItemDto>> GetPortfolioAsync(Guid userId)
     {
         var items = await _context.PortfolioItems
@@ -108,20 +134,8 @@ public class PortfolioService
     }
 
     internal static string NormalizeSymbol(string symbol)
-    {
-        var normalized = symbol.ToUpperInvariant();
-        // Mutual-fund symbols from Yahoo start with 0P and may carry an exchange suffix
-        // (e.g. 0P0000X09U.F). Strip the suffix so the same fund always maps to one row.
-        if (normalized.StartsWith("0P", StringComparison.OrdinalIgnoreCase))
-        {
-            var dotIndex = normalized.LastIndexOf('.');
-            if (dotIndex > 0)
-            {
-                return normalized[..dotIndex];
-            }
-        }
-        return normalized;
-    }
+        // Uppercase and strip the exchange suffix so the same fund always maps to one row.
+        => SymbolClassifier.StripExchangeSuffix(symbol.ToUpperInvariant());
 
     public async Task<PortfolioItemDto?> AddItemAsync(CreatePortfolioItemRequest request)
     {
@@ -215,27 +229,6 @@ public class PortfolioService
         return true;
     }
 
-    public async Task<PortfolioPerformanceDto> GetPerformanceAsync(Guid userId)
-    {
-        var items = await _context.PortfolioItems
-            .Where(p => p.UserId == userId)
-            .ToListAsync();
-
-        var performance = new PortfolioPerformanceDto();
-
-        if (items.Count == 0)
-            return performance;
-
-        var usdToEur = await _currencyService.GetUsdToEurRateAsync();
-
-        var prices = await Task.WhenAll(items.Select(GetCurrentPriceUsdAsync));
-        var currentValue = items.Select((item, i) => item.Shares * (prices[i] ?? 0) * usdToEur).Sum();
-
-        // Without reliable historical data providers, performance metrics default to 0.
-        // This avoids Yahoo Finance rate limits and keeps the app responsive.
-        return performance;
-    }
-
     public async Task<PortfolioDashboardDto> GetDashboardAsync(Guid userId)
     {
         var items = await _context.PortfolioItems
@@ -257,50 +250,12 @@ public class PortfolioService
 
         await SaveDailySnapshotAsync(userId, result.Items);
 
-        // Real period changes computed from stored daily snapshots.
-        result.Performance = await ComputePerformanceFromHistoryAsync(userId);
+        var sinceInception = ComputeSinceInception(result.Items);
+        result.Performance.SinceInceptionCostBasis = sinceInception.CostBasis;
+        result.Performance.SinceInceptionGainLoss = sinceInception.GainLoss;
+        result.Performance.SinceInceptionGainLossPercent = sinceInception.GainLossPercent;
 
         return result;
-    }
-
-    private async Task<PortfolioPerformanceDto> ComputePerformanceFromHistoryAsync(Guid userId)
-    {
-        var totals = await _context.PortfolioHistoryPoints
-            .AsNoTracking()
-            .Where(p => p.UserId == userId && p.ItemId == Guid.Empty)
-            .OrderBy(p => p.Date)
-            .ToListAsync();
-
-        var perf = new PortfolioPerformanceDto();
-        if (totals.Count < 2)
-            return perf;
-
-        var last = totals[^1];
-        perf.Daily = ChangeOverDays(totals, last, 1);
-        perf.Weekly = ChangeOverDays(totals, last, 7);
-        perf.Monthly = ChangeOverDays(totals, last, 30);
-        perf.Ytd = YtdChange(totals, last);
-        perf.Yearly = ChangeOverDays(totals, last, 365);
-        return perf;
-    }
-
-    private static decimal ChangeOverDays(List<PortfolioHistoryPoint> points, PortfolioHistoryPoint last, int daysBack)
-    {
-        var cutoff = last.Date.AddDays(-daysBack);
-        var baseline = points.LastOrDefault(p => p.Date <= cutoff);
-        if (baseline == null || baseline.ValueEur == 0)
-            return 0;
-        return (last.ValueEur - baseline.ValueEur) / baseline.ValueEur * 100;
-    }
-
-    private static decimal YtdChange(List<PortfolioHistoryPoint> points, PortfolioHistoryPoint last)
-    {
-        var jan1 = new DateTime(last.Date.Year, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-        var baseline = points.LastOrDefault(p => p.Date < jan1)
-                       ?? points.FirstOrDefault(p => p.Date >= jan1 && p.Date < last.Date);
-        if (baseline == null || baseline.ValueEur == 0)
-            return 0;
-        return (last.ValueEur - baseline.ValueEur) / baseline.ValueEur * 100;
     }
 
     // Upserts today's snapshot on every dashboard load so the current day always
@@ -354,6 +309,11 @@ public class PortfolioService
             .OrderBy(p => p.Date)
             .ToListAsync();
 
+        var transactions = await _context.PortfolioTransactions
+            .AsNoTracking()
+            .Where(t => t.UserId == userId)
+            .ToListAsync();
+
         var response = new PortfolioHistoryResponseDto();
 
         foreach (var point in points)
@@ -370,6 +330,18 @@ public class PortfolioService
                 list.Add(dto);
             }
         }
+
+        var totals = points.Where(p => p.ItemId == Guid.Empty).OrderBy(p => p.Date).ToList();
+        var flowsByDate = transactions
+            .Where(t => t.Type is "Buy" or "Sell")
+            .GroupBy(t => t.Date.Date)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Sum(t => t.Type == "Buy" ? t.AmountEur + t.Commission : -t.AmountEur));
+
+        response.TotalReturn = ReturnCalculators.ComputeTwrSeries(totals, flowsByDate);
+        response.TotalSimpleReturn = ReturnCalculators.ComputeSimpleReturnSeries(totals, transactions);
+        response.ItemReturns = ReturnCalculators.ComputeItemReturnSeries(points, transactions);
 
         return response;
     }

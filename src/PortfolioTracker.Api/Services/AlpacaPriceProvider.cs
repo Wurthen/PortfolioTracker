@@ -32,7 +32,7 @@ public class AlpacaPriceProvider : IPriceProvider
         }
 
         // Alpaca only covers US equities and ETFs; never query it for mutual funds.
-        if (IsFundSymbol(symbol))
+        if (SymbolClassifier.IsFund(symbol))
         {
             _logger.LogDebug("Alpaca skipping fund symbol {Symbol}", symbol);
             return null;
@@ -105,17 +105,6 @@ public class AlpacaPriceProvider : IPriceProvider
             _logger.LogError(ex, "Alpaca error for {Symbol}", symbol);
             return null;
         }
-    }
-
-    private static bool IsFundSymbol(string symbol)
-    {
-        if (symbol.StartsWith("0P", StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        if (symbol.EndsWith(".EUFUND", StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        return false;
     }
 
     private static decimal? ParsePriceValue(JsonElement element)

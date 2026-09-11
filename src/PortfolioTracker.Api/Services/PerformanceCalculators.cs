@@ -1,32 +1,7 @@
-using System.Globalization;
-
 namespace PortfolioTracker.Api.Services;
 
 public static class PerformanceCalculators
 {
-    /// <summary>Money-weighted return (%) over a period using the Modified Dietz method.</summary>
-    public static decimal ModifiedDietz(decimal beginValue, decimal endValue, IReadOnlyCollection<(DateTime Date, decimal Flow)> externalFlows, DateTime periodStart, DateTime periodEnd)
-    {
-        var totalDays = (periodEnd - periodStart).TotalDays;
-        if (totalDays <= 0 || beginValue < 0)
-            return 0;
-
-        decimal netFlow = 0;
-        decimal weightedFlow = 0;
-        foreach (var flow in externalFlows)
-        {
-            netFlow += flow.Flow;
-            var remaining = totalDays - (flow.Date - periodStart).TotalDays;
-            weightedFlow += flow.Flow * (decimal)(remaining / totalDays);
-        }
-
-        var denominator = beginValue + weightedFlow;
-        if (denominator == 0)
-            return 0;
-
-        return (endValue - beginValue - netFlow) / denominator * 100m;
-    }
-
     /// <summary>
     /// Annualized money-weighted return (%) via bisection.
     /// Cashflows: negative = money outlaid (purchases), positive = withdrawals/current value.

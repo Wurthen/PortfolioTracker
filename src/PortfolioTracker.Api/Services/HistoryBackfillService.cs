@@ -46,7 +46,7 @@ public class HistoryBackfillService
         _twelveDataApiKey = configuration["TwelveDataApiKey"] ?? "";
     }
 
-    public async Task<BackfillResultDto> BackfillAsync(Guid userId)
+    public async Task<BackfillResultDto> BackfillAsync(Guid userId, bool rebuild = false)
     {
         var result = new BackfillResultDto();
 
@@ -59,6 +59,18 @@ public class HistoryBackfillService
 
         if (items.Count == 0)
             return result;
+
+        // Rebuild wipes stored history first so it is regenerated with the current
+        // (SafeBack-aware) replay. Existing rows are otherwise skipped, which is why
+        // a plain re-run cannot repair historical points written with stale logic.
+        if (rebuild)
+        {
+            var allPoints = await _context.PortfolioHistoryPoints
+                .Where(p => p.UserId == userId)
+                .ToListAsync();
+            _context.PortfolioHistoryPoints.RemoveRange(allPoints);
+            await _context.SaveChangesAsync();
+        }
 
         // Existing points keyed by (date -> itemId -> value); totals tracked separately.
         var existing = await _context.PortfolioHistoryPoints
@@ -105,7 +117,7 @@ public class HistoryBackfillService
                     series = ForwardFill(series, fromDate, today);
                 }
                 else if (item.Type.Equals("Fund", StringComparison.OrdinalIgnoreCase) &&
-                         item.Symbol.StartsWith("0P", StringComparison.OrdinalIgnoreCase))
+                         SymbolClassifier.IsMorningstarFund(item.Symbol))
                 {
                     // Fund without alternative symbol (no provider coverage): flat line at seeded SymbolPrices value.
                     var seeded = await _context.SymbolPrices
@@ -140,13 +152,7 @@ public class HistoryBackfillService
                     series = series
                         .Select(kv =>
                         {
-                            var held = itemTxs.Where(t => t.Date.Date <= kv.Key)
-                                .Sum(t => t.Type switch
-                                {
-                                    "Buy" or "TransferIn" => t.Shares,
-                                    "Sell" or "TransferOut" => -t.Shares,
-                                    _ => 0m
-                                });
+                            var held = SharesHeldAt(itemTxs, kv.Key);
                             return new KeyValuePair<DateTime, decimal>(kv.Key, kv.Value * held);
                         })
                         .Where(kv => kv.Value > 0)
@@ -214,7 +220,7 @@ public class HistoryBackfillService
         var json = await _httpClient.GetStringAsync(url);
         using var doc = JsonDocument.Parse(json);
 
-        var isEur = symbol.EndsWith(".EUFUND", StringComparison.OrdinalIgnoreCase);
+        var isEur = SymbolClassifier.HasEufundSuffix(symbol);
         var list = new List<KeyValuePair<DateTime, decimal>>();
 
         if (doc.RootElement.ValueKind != JsonValueKind.Array)
@@ -390,6 +396,21 @@ public class HistoryBackfillService
         }
         return list;
     }
+
+    /// <summary>
+    /// Shares held on a given day from the transaction replay. SafeBack adds shares
+    /// (cash the broker reinvests for the user) so historical values stay consistent
+    /// with the live snapshot, which already counts them.
+    /// </summary>
+    internal static decimal SharesHeldAt(IEnumerable<PortfolioTransaction> transactions, DateTime date)
+        => transactions
+            .Where(t => t.Date.Date <= date.Date)
+            .Sum(t => t.Type switch
+            {
+                "Buy" or "TransferIn" or "SafeBack" => t.Shares,
+                "Sell" or "TransferOut" => -t.Shares,
+                _ => 0m
+            });
 
     public static decimal? ParseDecimal(JsonElement el)
     {

@@ -22,32 +22,3 @@ main {
         min-width: auto;
     }
 }
-
-#blazor-error-ui {
-    color-scheme: dark;
-    background: var(--pt-surface);
-    border-top: 1px solid var(--pt-border);
-    color: var(--pt-text);
-    bottom: 0;
-    box-shadow: 0 -4px 6px rgba(0, 0, 0, 0.3);
-    box-sizing: border-box;
-    display: none;
-    left: 0;
-    padding: 0.75rem 1.25rem;
-    position: fixed;
-    width: 100%;
-    z-index: 1000;
-}
-
-#blazor-error-ui .reload {
-    color: var(--pt-primary);
-    margin-left: 0.5rem;
-}
-
-#blazor-error-ui .dismiss {
-    cursor: pointer;
-    position: absolute;
-    right: 0.75rem;
-    top: 0.6rem;
-    color: var(--pt-text-muted);
-}

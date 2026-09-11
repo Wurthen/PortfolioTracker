@@ -60,11 +60,9 @@ public class UpdatePortfolioItemRequest
 
 public class PortfolioPerformanceDto
 {
-    public decimal Daily { get; set; }
-    public decimal Weekly { get; set; }
-    public decimal Monthly { get; set; }
-    public decimal Ytd { get; set; }
-    public decimal Yearly { get; set; }
+    public decimal SinceInceptionCostBasis { get; set; }
+    public decimal SinceInceptionGainLoss { get; set; }
+    public decimal SinceInceptionGainLossPercent { get; set; }
 }
 
 public class PortfolioDashboardDto
@@ -82,6 +80,9 @@ public class PortfolioHistoryResponseDto
 {
     public List<HistoryPointDto> Total { get; set; } = [];
     public Dictionary<string, List<HistoryPointDto>> Items { get; set; } = [];
+    public List<HistoryPointDto> TotalReturn { get; set; } = [];
+    public List<HistoryPointDto> TotalSimpleReturn { get; set; } = [];
+    public Dictionary<string, List<HistoryPointDto>> ItemReturns { get; set; } = [];
 }
 
 public class HistoryPointDto
@@ -136,8 +137,6 @@ public class PeriodPerformanceDto
 {
     public string Key { get; set; } = "";
     public string Label { get; set; } = "";
-    public decimal SimplePct { get; set; }
-    public decimal? MwrPct { get; set; }
 }
 
 public class DetailedPerformanceDto

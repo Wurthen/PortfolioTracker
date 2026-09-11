@@ -51,14 +51,6 @@ public class PortfolioApiService
         return response.IsSuccessStatusCode;
     }
 
-    public async Task<PortfolioPerformanceDto?> GetPerformanceAsync(Guid userId)
-    {
-        var response = await Client.GetAsync($"/api/portfolio/{userId}/performance");
-        if (!response.IsSuccessStatusCode)
-            return null;
-        return await response.Content.ReadFromJsonAsync<PortfolioPerformanceDto>();
-    }
-
     public async Task<PortfolioDashboardDto?> GetDashboardAsync(Guid userId)
     {
         return await GetWithRetryAsync<PortfolioDashboardDto>($"/api/portfolio/{userId}/dashboard");
@@ -72,9 +64,10 @@ public class PortfolioApiService
         return await response.Content.ReadFromJsonAsync<PortfolioHistoryResponseDto>();
     }
 
-    public async Task<BackfillResultDto?> BackfillHistoryAsync(Guid userId)
+    public async Task<BackfillResultDto?> BackfillHistoryAsync(Guid userId, bool rebuild = false)
     {
-        var response = await Client.PostAsync($"/api/portfolio/{userId}/backfill", null);
+        var url = $"/api/portfolio/{userId}/backfill" + (rebuild ? "?rebuild=true" : "");
+        var response = await Client.PostAsync(url, null);
         if (!response.IsSuccessStatusCode)
             return null;
         return await response.Content.ReadFromJsonAsync<BackfillResultDto>();

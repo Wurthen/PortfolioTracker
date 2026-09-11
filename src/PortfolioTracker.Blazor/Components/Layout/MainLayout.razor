@@ -1,4 +1,5 @@
 ﻿@inherits LayoutComponentBase
+@inject ILogger<MainLayout> Logger
 
 <div class="page">
     <header class="pt-header">
@@ -8,7 +9,7 @@
                     <span class="pt-brand-mark">PT</span>
                     <span>Portfolio Tracker</span>
                 </a>
-                <PortfolioSelector />
+                <PortfolioSelector OnSelectionChanged="OnPortfolioSelectionChanged" />
             </div>
             <div class="d-flex align-items-center gap-3">
                 <ImportButton OnImportRequested="ShowImportPlaceholder" />
@@ -30,8 +31,8 @@
 <ImportDialog @bind-IsVisible="showImportDialog" ImportType="@importType" />
 
 <div id="blazor-error-ui" data-nosnippet>
-    An unhandled error has occurred.
-    <a href="." class="reload">Reload</a>
+    Se ha producido un error inesperado.
+    <a href="." class="reload">Recargar</a>
     <span class="dismiss">🗙</span>
 </div>
 
@@ -43,5 +44,11 @@
     {
         importType = type;
         showImportDialog = true;
+    }
+
+    private void OnPortfolioSelectionChanged(string portfolio)
+    {
+        // Multi-portfolio support is not implemented yet; only "default" exists.
+        Logger.LogInformation("Portfolio selection changed to {Portfolio}", portfolio);
     }
 }

@@ -17,12 +17,18 @@ public class TwelveDataPriceProvider : IPriceProvider
     {
         _httpClient = httpClient;
         _logger = logger;
-        _apiKey = configuration["TwelveDataApiKey"] ?? "demo";
+        _apiKey = configuration["TwelveDataApiKey"] ?? "";
         _cache = cache;
     }
 
     public async Task<decimal?> GetPriceAsync(string symbol)
     {
+        if (string.IsNullOrWhiteSpace(_apiKey))
+        {
+            _logger.LogDebug("TwelveData API key not configured, skipping");
+            return null;
+        }
+
         var cacheKey = $"price_{symbol}";
         
         if (_cache.TryGetValue(cacheKey, out decimal cachedPrice))
@@ -33,7 +39,7 @@ public class TwelveDataPriceProvider : IPriceProvider
 
         try
         {
-            var isFund = symbol.StartsWith("0P", StringComparison.OrdinalIgnoreCase);
+            var isFund = SymbolClassifier.IsMorningstarFund(symbol);
             var exchangeParam = isFund ? "&mic_code=XFRA" : "";
             var endpoint = isFund ? "eod" : "quote";
             var url = $"https://api.twelvedata.com/{endpoint}?symbol={Uri.EscapeDataString(symbol)}&apikey={_apiKey}{exchangeParam}";

@@ -108,12 +108,6 @@ app.MapDelete("/api/portfolio/{id:guid}/{userId:guid}", async (Guid id, Guid use
     return success ? Results.NoContent() : Results.NotFound();
 });
 
-app.MapGet("/api/portfolio/{userId:guid}/performance", async (Guid userId, PortfolioService portfolioService) =>
-{
-    var performance = await portfolioService.GetPerformanceAsync(userId);
-    return Results.Ok(performance);
-});
-
 app.MapGet("/api/portfolio/{userId:guid}/dashboard", async (Guid userId, PortfolioService portfolioService) =>
 {
     var dashboard = await portfolioService.GetDashboardAsync(userId);
@@ -126,9 +120,9 @@ app.MapGet("/api/portfolio/{userId:guid}/history", async (Guid userId, Portfolio
     return Results.Ok(history);
 });
 
-app.MapPost("/api/portfolio/{userId:guid}/backfill", async (Guid userId, HistoryBackfillService backfillService) =>
+app.MapPost("/api/portfolio/{userId:guid}/backfill", async (Guid userId, bool? rebuild, HistoryBackfillService backfillService) =>
 {
-    var result = await backfillService.BackfillAsync(userId);
+    var result = await backfillService.BackfillAsync(userId, rebuild ?? false);
     return Results.Ok(result);
 });
 

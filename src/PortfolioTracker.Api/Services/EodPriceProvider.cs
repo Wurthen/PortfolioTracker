@@ -77,9 +77,9 @@ public class EodPriceProvider : IPriceProvider
 
             // 401/402/403/429 = bad key or daily quota gone: further attempts only burn
             // what little quota may remain. Fall straight to the persisted price.
-            if (!price.HasValue && !QuotaBlocked && symbol.EndsWith(".EUFUND", StringComparison.OrdinalIgnoreCase))
+            if (!price.HasValue && !QuotaBlocked && SymbolClassifier.HasEufundSuffix(symbol))
             {
-                var symbolWithoutSuffix = symbol[..^7];
+                var symbolWithoutSuffix = SymbolClassifier.WithoutEufundSuffix(symbol);
                 _logger.LogInformation("EOD trying without EUFUND suffix: {Symbol}", symbolWithoutSuffix);
                 price = await TryGetRealTimePriceAsync(symbolWithoutSuffix);
                 if (!price.HasValue && !QuotaBlocked)
@@ -255,7 +255,7 @@ public class EodPriceProvider : IPriceProvider
     {
         // Only explicit exchange/fund suffixes imply currency. Prefix heuristics
         // misclassify US tickers like ES, IT, BE, FR...
-        if (symbol.EndsWith(".EUFUND", StringComparison.OrdinalIgnoreCase))
+        if (SymbolClassifier.HasEufundSuffix(symbol))
             return "EUR";
 
         return "USD";

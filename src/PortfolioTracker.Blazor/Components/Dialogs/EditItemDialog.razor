@@ -1,11 +1,12 @@
 @inject PortfolioApiService ApiService
+@inject ILogger<EditItemDialog> Logger
 
-<div class="modal fade @(IsVisible ? "show d-block" : "")" tabindex="-1" style="background-color: rgba(0,0,0,0.7);">
+<div class="modal fade @(IsVisible ? "show d-block" : "")" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="editItemModalTitle" style="background-color: rgba(0,0,0,0.7);">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Editar inversión</h5>
-                <button type="button" class="btn-close" @onclick="Close"></button>
+                <h5 class="modal-title" id="editItemModalTitle">Editar inversión</h5>
+                <button type="button" class="btn-close" aria-label="Cerrar" @onclick="Close"></button>
             </div>
             <div class="modal-body">
                 <div class="alert alert-secondary d-flex justify-content-between align-items-center">
@@ -115,7 +116,7 @@
     private string ErrorMessage { get; set; } = "";
 
     private Guid? _lastItemId;
-    private bool IsFund => Item?.Type.Equals("Fund", StringComparison.OrdinalIgnoreCase) == true;
+    private bool IsFund => string.Equals(Item?.Type, "Fund", StringComparison.OrdinalIgnoreCase);
 
     protected override void OnParametersSet()
     {
@@ -178,8 +179,9 @@
         }
         catch (Exception ex)
         {
+            Logger.LogError(ex, "Error updating item {ItemId}", Item.Id);
             HasError = true;
-            ErrorMessage = $"Error: {ex.Message}";
+            ErrorMessage = "No se pudo actualizar la inversión. Inténtalo de nuevo.";
         }
         finally
         {

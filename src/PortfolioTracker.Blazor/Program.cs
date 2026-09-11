@@ -5,8 +5,6 @@ using PortfolioTracker.Blazor.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.WebHost.UseUrls("http://0.0.0.0:8081");
-
 var apiBaseUrl = Environment.GetEnvironmentVariable("ApiBaseUrl") ?? "http://localhost:8080";
 Console.WriteLine($"ApiBaseUrl: {apiBaseUrl}");
 

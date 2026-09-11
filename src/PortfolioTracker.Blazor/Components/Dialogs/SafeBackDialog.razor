@@ -1,11 +1,12 @@
 @inject PortfolioApiService ApiService
+@inject ILogger<SafeBackDialog> Logger
 
-<div class="modal fade @(IsVisible ? "show d-block" : "")" tabindex="-1" style="background-color: rgba(0,0,0,0.7);">
+<div class="modal fade @(IsVisible ? "show d-block" : "")" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="safeBackModalTitle" style="background-color: rgba(0,0,0,0.7);">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Registrar SafeBack</h5>
-                <button type="button" class="btn-close" @onclick="Close"></button>
+                <h5 class="modal-title" id="safeBackModalTitle">Registrar SafeBack</h5>
+                <button type="button" class="btn-close" aria-label="Cerrar" @onclick="Close"></button>
             </div>
             <div class="modal-body">
                 @if (Item != null)
@@ -127,8 +128,9 @@
         }
         catch (Exception ex)
         {
+            Logger.LogError(ex, "Error registering SafeBack for item {ItemId}", Item.Id);
             HasError = true;
-            ErrorMessage = $"Error: {ex.Message}";
+            ErrorMessage = "No se pudo registrar el SafeBack. Inténtalo de nuevo.";
         }
         finally
         {

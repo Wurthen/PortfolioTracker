@@ -1,5 +1,10 @@
 # PortfolioTracker
 
+## Language (IMPORTANT)
+
+- Reply to the user in **Castilian Spanish from Spain (es-ES)**. Never use Rioplatense/voseo, Argentine slang, or regional Latin-American variants.
+- Generated artifacts (code, comments, UI copy, docs, commits, memory entries) default to English unless the user requests otherwise.
+
 ## Stack & Entrypoints
 
 - .NET 10 Minimal API (`src/PortfolioTracker.Api/Program.cs`) + Blazor Server (`src/PortfolioTracker.Blazor/Program.cs`).
@@ -60,7 +65,14 @@ The compose project is managed by **Visual Studio**. Do **not** run plain `docke
 docker compose -p <vs-project-name> up -d --force-recreate --no-deps mcp-pandas
 ```
 
-Compose services: API on `8080`, Blazor on `8081`, Postgres on `5432`, mcp-pandas on `8082`.
+Compose services: API on `8080`, Blazor on `8081`, Postgres on `5432`, mcp-pandas on `8082`. The API now waits for the Postgres `pg_isready` healthcheck before starting.
+
+Both Dockerfiles use their own project directory as build context and build standalone:
+
+```bash
+docker build -t pt-api "src/PortfolioTracker.Api"
+docker build -t pt-blazor "src/PortfolioTracker.Blazor"
+```
 
 ## Secrets
 
@@ -80,9 +92,11 @@ CI does not need keys (tests are pure units).
 - **Stocks / ETFs:** `Alpaca` → `TwelveData` → `FMP` → `EOD` → persistent cache
 - **Funds (`0P*` or `.EUFUND`):** `EOD` → persistent cache only
 
+`SymbolClassifier` is the single source of truth for fund detection (`0P*`, `.EUFUND`) and suffix stripping. Add new fund heuristics there, not inline.
+
 Key quirks:
 - Alpaca covers **US stocks and ETFs only**. European tickers like `PHYMF` return `NotFound`; the fallback chain handles them.
-- Alt-symbol funds (`UseAlternativeSymbol`) bypass the composite chain; `PortfolioService` calls `EodPriceProvider` directly.
+- Alt-symbol funds (`UseAlternativeSymbol`) try `EodPriceProvider` first; if that fails, `PortfolioService` retries the composite chain with the item's **primary** symbol.
 - `EodPriceProvider` has a daily cadence gate for funds: at most one live fetch per UTC day, plus an evening refresh after 19:00 UTC when NAVs publish.
 - HTTP 401/402/403/429 from EOD cuts the attempt chain immediately; failures fall back to `SymbolPrices` only if < 7 days old.
 - Fund NAVs publish once daily (~20:00–22:00 CET), so funds show `0.00%` intraday. This is expected.
@@ -105,9 +119,9 @@ decimal.TryParse(s, NumberStyles.Number, CultureInfo.InvariantCulture, out var p
 
 ### Currency
 
-- All internal prices/calculations are **USD**.
-- EOD fund prices are native currency; `.EUFUND` = EUR and is converted **EUR→USD** via `CurrencyService.GetEurToUsdRateAsync()`.
-- Display layer converts USD→EUR.
+- Provider quotes are normalized to **USD** (`CurrentPriceUsd`). `EodPriceProvider` converts native-EUR fund prices (`.EUFUND`) to USD via `CurrencyService.GetEurToUsdRateAsync()` so the whole chain speaks USD.
+- Portfolio values, gain/loss and history are **EUR**: `MapToDto` converts USD→EUR for `CurrentPrice`/`CurrentValue`/`GainLoss`, and snapshots store EUR (`PortfolioHistoryPoint.ValueEur`). The historical return series are EUR too.
+- `CurrencyService` falls back to a hardcoded rate (0.92 / 1.09) and caches it briefly when the FX API fails.
 
 ### Portfolio Merge Behavior
 
@@ -118,11 +132,19 @@ decimal.TryParse(s, NumberStyles.Number, CultureInfo.InvariantCulture, out var p
 
 ### Performance "Desde inicio"
 
-The first period row must **exactly** equal total gain ÷ total invested. Enforced in `TransactionService.ComputeDetailedPerformanceAsync`. Do not replace it with Dietz.
+The "Desde inicio" value must **exactly** equal total gain ÷ total invested. Single source of truth is `PortfolioService.ComputeSinceInception` (surfaced on the dashboard as `SinceInceptionGainLossPercent`); `Home.razor` uses it for both the KPI and the "Desde inicio" period card. Do not replace it with Dietz.
+
+### Return Metrics (chart vs KPI)
+
+`ComputeSinceInception`/`ComputeSimpleReturnSeries` (simple = gain ÷ invested) is the source of truth for the "Ganancia / Pérdida" KPI and every since-inception view. When the chart window covers the full history (`Inicio`, and `1A` while the portfolio is younger than a year), `Home.razor` plots `History.TotalSimpleReturn` and shows `SinceInceptionGainLossPercent`, so it matches the KPI. **TWR (`ReturnCalculators.ComputeTwrSeries`, `History.TotalReturn`) is used only for bounded windows** (1S–6M), where it removes the distorting effect of contributions made inside the period. Never show TWR for a full-history window.
+
+The "Rentabilidad por periodo" cards do not carry their own metric: `Home.razor` derives each bounded window from the same TWR series the chart plots (`PeriodReturn` + `FilterSeries`), and shows `SinceInceptionGainLossPercent` for "Desde inicio". Modified Dietz was removed; do not reintroduce a second metric per window.
 
 ### SafeBack
 
-SafeBack is cash received (e.g., from Trade Republic) that is automatically reinvested at market price. It is recorded as a `SafeBack` transaction, increases shares like a `Buy`, raises the cost basis, and accumulates `SafeBackAmount` for tracking. It does **not** create instant unrealized gain.
+SafeBack is cash received (e.g., from Trade Republic) that is automatically reinvested at market price. It is recorded as a `SafeBack` transaction that **adds shares without adding cost basis** — it is treated as return, not a purchase. It accumulates `SafeBackAmount`/`SafeBackShares` for tracking and is excluded from external cash flows in TWR. `HistoryBackfillService.SharesHeldAt` must count `SafeBack` shares so historical values stay consistent with the live snapshot. Use `POST /api/portfolio/{userId}/backfill?rebuild=true` after changing the replay logic: a plain re-run skips existing rows and will not repair them.
+
+`TransactionService.AddSafeBackAsync` dilutes `PurchasePrice` via `PortfolioService.ComputeSafeBackPrice`, so `Shares * PurchasePrice + Commission` stays constant. `scripts/recalculate_safeback_costbasis.sql` is only a one-time repair for rows saved before that fix (F1 in `notes/audit-2026-09-10.md`); new SafeBacks need no patch.
 
 ### Charting Conventions
 
@@ -139,8 +161,8 @@ At the start of every session, read `notes/memory.md` and any other `*.md` files
 
 ## Project Scripts & Notes
 
-- `scripts/` — maintenance SQL/scripts (e.g., `rebuild_gold.sql`)
-- `notes/` — session memory and context files
+- `scripts/` — maintenance SQL (`rebuild_gold.sql`); `recalculate_safeback_costbasis.sql` repairs cost basis on rows saved before the SafeBack fix.
+- `notes/` — session memory plus `notes/audit-2026-09-10.md` (full code audit with a resolution status section added on 11/09).
 
 ## Common Gotchas
 
@@ -150,6 +172,9 @@ At the start of every session, read `notes/memory.md` and any other `*.md` files
 - **Yahoo search by name can return the wrong instrument**. Search by ISIN when in doubt (`?query=IE0031786142`).
 - **Transfers** approximate moved shares with the source fund's average price; real Spanish *traspaso* conserves original cost basis at destination.
 - **No realized-gains tracking** for Sells yet; no transaction delete/edit UI (API-only).
+- **Every `GET /dashboard` writes today's snapshot and live-fetches a price for every position** — repeated reloads burn provider quota (EOD free tier is 20 calls/day).
+- **Without secrets, providers skip live calls** — `appsettings.json` ships empty API keys, and every provider (including TwelveData) returns null when its key is empty; the chain falls back to persisted `SymbolPrices`.
+- **`GET /performance` was removed** — the UI uses `/dashboard` (KPIs) and `/performance-detailed` (periods and XIRR).
 
 ## CI
 
