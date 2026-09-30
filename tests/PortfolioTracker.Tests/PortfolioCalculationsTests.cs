@@ -209,4 +209,56 @@ public class HistoryBackfillReplayTests
 
         Assert.Equal(5m, HistoryBackfillService.SharesHeldAt(txs, new DateTime(2026, 1, 7)));
     }
+
+    [Fact]
+    // Regression: adding to an existing position overwrites PurchaseDate, and starting the
+    // series there made the whole position "appear" one day with no flow (fake +20% TWR).
+    public void ResolveFromDate_UsesFirstTransactionWhenPurchaseDateWasOverwritten()
+    {
+        var today = new DateTime(2026, 9, 14);
+        var txs = new List<PortfolioTransaction>
+        {
+            new() { ItemId = Guid.NewGuid(), Type = "Buy", Date = new DateTime(2026, 2, 9), Shares = 12m },
+            new() { ItemId = Guid.NewGuid(), Type = "Buy", Date = new DateTime(2026, 9, 3), Shares = 0.6m }
+        };
+
+        var fromDate = HistoryBackfillService.ResolveFromDate(today, new DateTime(2026, 9, 3), txs);
+
+        Assert.Equal(new DateTime(2026, 2, 9), fromDate);
+    }
+
+    [Fact]
+    public void ResolveFromDate_ClampsToBackfillWindow()
+    {
+        var today = new DateTime(2026, 9, 14);
+        var txs = new List<PortfolioTransaction>
+        {
+            new() { ItemId = Guid.NewGuid(), Type = "Buy", Date = new DateTime(2020, 1, 1), Shares = 1m }
+        };
+
+        Assert.Equal(today.AddDays(-365), HistoryBackfillService.ResolveFromDate(today, null, txs));
+        Assert.Equal(today.AddDays(-365), HistoryBackfillService.ResolveFromDate(today, null, null));
+    }
+
+    [Fact]
+    public void ComposeForwardFilledTotals_CarriesMissingItemValuesForward()
+    {
+        var gold = Guid.NewGuid();
+        var fund = Guid.NewGuid();
+        var d1 = new DateTime(2026, 9, 1);
+        var d2 = new DateTime(2026, 9, 2);
+        var d3 = new DateTime(2026, 9, 3);
+        var points = new (DateTime Date, Guid ItemId, decimal Value)[]
+        {
+            (d1, gold, 300m), (d1, fund, 1000m),
+            (d2, fund, 1010m),                        // gold has no NAV this day
+            (d3, gold, 310m), (d3, fund, 1020m)
+        };
+
+        var totals = HistoryBackfillService.ComposeForwardFilledTotals(points);
+
+        Assert.Equal(1300m, totals[d1]);
+        Assert.Equal(1310m, totals[d2]);   // carried gold 300 + fund 1010
+        Assert.Equal(1330m, totals[d3]);
+    }
 }

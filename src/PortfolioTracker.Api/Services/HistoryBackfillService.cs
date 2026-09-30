@@ -98,12 +98,15 @@ public class HistoryBackfillService
         foreach (var item in items)
         {
             var res = new BackfillItemResultDto { Symbol = item.Symbol };
-            var fromDate = today.AddDays(-365);
-            if (item.PurchaseDate.HasValue && item.PurchaseDate.Value.Date > fromDate)
-                fromDate = item.PurchaseDate.Value.Date;
-
             var priorCount = perItem.Keys.Count(k => k.ItemId == item.Id);
             txsByItem.TryGetValue(item.Id, out var itemTxs);
+
+            // History must start at the item's FIRST lot, never at PurchaseDate alone:
+            // adding to an existing position overwrites PurchaseDate ("last wins"), and
+            // truncating the series there made the whole position "appear" on that day
+            // with no matching flow (a fake +20% TWR day and a fake loss for every Buy
+            // whose value never showed up).
+            var fromDate = ResolveFromDate(today, item.PurchaseDate, itemTxs);
 
             try
             {
@@ -149,6 +152,12 @@ public class HistoryBackfillService
                 // actually held each day (transaction replay) to get position values.
                 if (itemTxs is { Count: > 0 })
                 {
+                    // Providers can start late (short NAV windows, quota). Back-cast a flat
+                    // segment at the first known price from the first lot so the position is
+                    // never missing from the totals before its provider data begins.
+                    if (series.Count > 0)
+                        series = PrependFlatSegment(series, itemTxs.Min(t => t.Date.Date));
+
                     series = series
                         .Select(kv =>
                         {
@@ -188,15 +197,23 @@ public class HistoryBackfillService
             result.Items.Add(res);
         }
 
-        // Rebuild missing TOTAL points (ItemId == Guid.Empty) for every known date.
-        var dates = perItem.Keys.Select(k => k.Date).Distinct();
-        foreach (var date in dates)
+        // Recompute EVERY total (ItemId == Guid.Empty) with per-item forward fill: a date
+        // where one position has no NAV must not drop it from the total, otherwise the
+        // position disappears and reappears and the TWR books both as return.
+        var totals = ComposeForwardFilledTotals(perItem.Select(kv => (kv.Key.Date, kv.Key.ItemId, kv.Value)));
+        var existingTotals = existing
+            .Where(p => p.ItemId == Guid.Empty)
+            .ToDictionary(p => p.Date);
+
+        foreach (var (date, total) in totals)
         {
-            var total = perItem.Where(kv => kv.Key.Date == date && kv.Key.ItemId != Guid.Empty).Sum(kv => kv.Value);
             if (total <= 0)
                 continue;
-            if (perItem.ContainsKey((date, Guid.Empty)))
+            if (existingTotals.TryGetValue(date, out var row))
+            {
+                row.ValueEur = decimal.Round(total, 2);
                 continue;
+            }
             newPoints.Add(new PortfolioHistoryPoint { UserId = userId, ItemId = Guid.Empty, Date = date, ValueEur = decimal.Round(total, 2) });
             result.TotalPointsInserted++;
         }
@@ -208,6 +225,84 @@ public class HistoryBackfillService
         }
 
         result.TotalPointsInserted += result.Items.Sum(i => i.PointsInserted);
+        return result;
+    }
+
+    /// <summary>
+    /// First date an item's history must cover: the earliest of its purchase date and its
+    /// first transaction, capped to the 12-month backfill window.
+    /// </summary>
+    internal static DateTime ResolveFromDate(DateTime today, DateTime? purchaseDate, IReadOnlyCollection<PortfolioTransaction>? transactions)
+    {
+        var windowStart = today.Date.AddDays(-365);
+        var earliest = purchaseDate?.Date;
+
+        if (transactions is { Count: > 0 })
+        {
+            var firstTx = transactions.Min(t => t.Date.Date);
+            earliest = earliest.HasValue && earliest.Value < firstTx ? earliest.Value : firstTx;
+        }
+
+        return earliest.HasValue && earliest.Value > windowStart ? earliest.Value : windowStart;
+    }
+
+    // Carries the first known price backwards to a transaction date, so a provider series
+    // that starts late still covers every day the position was held.
+    private static List<KeyValuePair<DateTime, decimal>> PrependFlatSegment(
+        List<KeyValuePair<DateTime, decimal>> series,
+        DateTime firstTxDate)
+    {
+        var first = series[0];
+        if (firstTxDate >= first.Key)
+            return series;
+
+        var prepended = new List<KeyValuePair<DateTime, decimal>>();
+        for (var d = firstTxDate; d < first.Key; d = d.AddDays(1))
+        {
+            if (d.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday)
+                continue;
+            prepended.Add(new KeyValuePair<DateTime, decimal>(d, first.Value));
+        }
+
+        if (prepended.Count == 0)
+            return series;
+
+        prepended.AddRange(series);
+        return prepended;
+    }
+
+    /// <summary>
+    /// Totals for every known date, summing each item's last known value on or before that
+    /// date (forward fill). A missing NAV must not remove a position from the total, or the
+    /// TWR reads the gap as a loss and the re-appearance as a gain.
+    /// </summary>
+    internal static Dictionary<DateTime, decimal> ComposeForwardFilledTotals(
+        IEnumerable<(DateTime Date, Guid ItemId, decimal Value)> points)
+    {
+        var byItem = points
+            .Where(p => p.ItemId != Guid.Empty && p.Value > 0)
+            .GroupBy(p => p.ItemId)
+            .Select(g => g.OrderBy(p => p.Date).ToList())
+            .ToList();
+
+        var result = new Dictionary<DateTime, decimal>();
+        foreach (var date in points.Select(p => p.Date).Distinct().OrderBy(d => d))
+        {
+            var total = 0m;
+            foreach (var series in byItem)
+            {
+                var last = 0m;
+                foreach (var point in series)
+                {
+                    if (point.Date > date)
+                        break;
+                    last = point.Value;
+                }
+                total += last;
+            }
+            result[date] = total;
+        }
+
         return result;
     }
 

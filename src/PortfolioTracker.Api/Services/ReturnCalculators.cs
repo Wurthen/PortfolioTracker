@@ -4,6 +4,13 @@ namespace PortfolioTracker.Api.Services;
 
 public static class ReturnCalculators
 {
+    // A no-flow daily move beyond this cannot come from this portfolio (funds, ETFs and
+    // the odd stock): it is a data artifact (a position whose NAV history was missing
+    // suddenly appearing or disappearing). Booking it would poison the compounded series,
+    // so the day is absorbed (0% return) instead of counted. The observed real-world
+    // artifact was +22.2% on 2026-09-03 (Cobas history truncated at PurchaseDate).
+    private const decimal MaxArtifactDailyReturn = 0.20m;
+
     /// <summary>
     /// Computes the daily Time-Weighted Return (TWR) series for the whole portfolio.
     /// External cash flows (Buys/Sells) are subtracted from the daily market change so
@@ -42,6 +49,9 @@ public static class ReturnCalculators
             var dailyReturn = previous.ValueEur != 0
                 ? (current.ValueEur - previous.ValueEur - flow) / previous.ValueEur
                 : 0m;
+
+            if (flow == 0m && Math.Abs(dailyReturn) > MaxArtifactDailyReturn)
+                dailyReturn = 0m;
 
             cumulative *= 1 + dailyReturn;
             var twrPct = decimal.Round((cumulative - 1) * 100m, 2);

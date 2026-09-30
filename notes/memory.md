@@ -1,3 +1,24 @@
+# Memory - Sesión 15/09/2026
+
+## Despliegue siempre-activo + migración de la base de datos
+
+### Infra
+- El compose ahora corre **siempre-activo** desde el CLI con nombre de proyecto fijo `portfoliotracker` (top-level `name:`); los 4 servicios llevan `restart: unless-stopped`. Visual Studio (F5) lanza su propio proyecto (nombre con hash `dockercompose1101…`) y **no pueden coexistir**: `docker compose stop` antes de depurar, `docker compose up -d` al terminar.
+- Lanzador de un clic: `scripts/open_portfoliotracker.ps1` (abre `http://localhost:8081`; si hace falta, arranca Docker Desktop y `docker compose up -d --wait`) con icono `scripts/portfoliotracker.ico` y acceso directo `PortfolioTracker.lnk` en el escritorio.
+- Autostart de Docker Desktop sigue en `false`; es opcional porque el lanzador lo arranca solo.
+
+### Migración de datos (lo importante)
+- Los datos reales estaban en el volumen del proyecto de VS; el stack siempre-activo arrancó con un volumen nuevo vacío. Migrado con `pg_dump -Fc` + `pg_restore` (drop/recreate de la BD `portfolio` con la API y Blazor parados).
+- Origen montado en un contenedor desechable `postgres:16` sin publicar puertos (evita el choque en 5432 con el stack nuevo).
+- Verificado: 11 items, 48 transacciones, 1441 puntos de histórico, 9 precios, 6 migraciones; `GET /api/portfolio/{userId}/transactions` devuelve 48.
+- Backups: dump en `%TEMP%\opencode\portfolio_20260915.dump` y el **volumen viejo intacto** (`dockercompose11015479111410671129_postgres_data`), por si acaso.
+
+### Pendiente
+- Tras validar unos días, decidir si se borran los contenedores parados y el volumen del proyecto de VS.
+- Refactor de `Home.razor` y cierre con Escape en modales (arrastrado de la sesión anterior).
+
+---
+
 # Memory - Sesión 11/09/2026
 
 ## Correcciones de la auditoría (F1–F7 y backlog)

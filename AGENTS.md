@@ -58,14 +58,17 @@ Migrations apply automatically when the API starts.
 
 ## Docker / Visual Studio Compose
 
-The compose project is managed by **Visual Studio**. Do **not** run plain `docker compose up`; it creates a second project and collides on port `8082`.
+The stack runs **always-on** from the CLI under the fixed project name `portfoliotracker` (top-level `name:` in `docker-compose.yml`); every service has `restart: unless-stopped`.
 
 ```bash
-# If you must recreate just mcp-pandas
-docker compose -p <vs-project-name> up -d --force-recreate --no-deps mcp-pandas
+docker compose up -d --build   # rebuild + start (always-on stack)
+docker compose stop            # stop to free the ports for VS debugging (won't auto-restart)
+docker compose up -d           # resume after debugging
 ```
 
-Compose services: API on `8080`, Blazor on `8081`, Postgres on `5432`, mcp-pandas on `8082`. The API now waits for the Postgres `pg_isready` healthcheck before starting.
+Visual Studio (F5) launches its own compose project and **cannot coexist** with the always-on stack — the ports collide. Stop the CLI stack before debugging from VS, then bring it back up. To recreate a single service: `docker compose up -d --force-recreate --no-deps mcp-pandas`.
+
+Compose services: API on `8080`, Blazor on `8081`, Postgres on `5432`, mcp-pandas on `8082`. The API waits for the Postgres `pg_isready` healthcheck before starting.
 
 Both Dockerfiles use their own project directory as build context and build standalone:
 
@@ -127,8 +130,19 @@ decimal.TryParse(s, NumberStyles.Number, CultureInfo.InvariantCulture, out var p
 
 `POST /api/portfolio` merges duplicate symbols per user (unique index `(UserId, Symbol)`). On merge:
 - `Name`, `Type`, and `AlternativeSymbol` from the request are **ignored**.
-- `PurchaseDate` is overwritten (last wins).
+- `PurchaseDate` is overwritten (last wins), so it is **not** the first purchase date.
 - Use `PUT /api/portfolio/{id}/{userId}` to set official metadata.
+
+### History Coverage (TWR correctness)
+
+The TWR series is only as good as the totals it compounds. Three invariants keep it sane:
+
+- `HistoryBackfillService.ResolveFromDate` starts each item's series at `min(PurchaseDate, first transaction)`, never at `PurchaseDate` alone (the merge overwrites it). A series truncated at the last top-up makes the whole position "appear" one day with no flow (real incident: fake +22.2% on 2026-09-03 from a truncated Cobas series).
+- `ComposeForwardFilledTotals` recomputes **every** total on each backfill run with per-item forward fill: a missing NAV must never remove a position from a total. A plain re-run now repairs totals (no `rebuild=true` needed for that).
+- `SaveDailySnapshotAsync` carries the last known history value forward for unpriced items, so today's snapshot never drops a position.
+- `ReturnCalculators.ComputeTwrSeries` absorbs no-flow daily moves over ±20% (data artifacts) instead of booking them as return. Flows still count normally.
+
+After any change to the replay/backfill, verify per item that its first history point equals its first transaction date and that no daily TWR move exceeds ~±5%.
 
 ### Performance "Desde inicio"
 
@@ -142,7 +156,7 @@ The "Rentabilidad por periodo" cards do not carry their own metric: `Home.razor`
 
 ### SafeBack
 
-SafeBack is cash received (e.g., from Trade Republic) that is automatically reinvested at market price. It is treated as an **external contribution** (as if the user deposited the money): the `SafeBack` transaction adds shares **and cost basis**, so the injection itself never shows as return — only the market performance of those shares counts afterwards. It accumulates `SafeBackAmount`/`SafeBackShares` for tracking and the UI surfaces a flat `+X € SafeBack` badge (row) and total (KPI card). `HistoryBackfillService.SharesHeldAt` must count `SafeBack` shares so historical values stay consistent with the live snapshot. Use `POST /api/portfolio/{userId}/backfill?rebuild=true` after changing the replay logic: a plain re-run skips existing rows and will not repair them.
+SafeBack is cash received (e.g., from Trade Republic) that is automatically reinvested at market price. It is treated as an **external contribution** (as if the user deposited the money): the `SafeBack` transaction adds shares **and cost basis**, so the injection itself never shows as return — only the market performance of those shares counts afterwards. It accumulates `SafeBackAmount`/`SafeBackShares` for tracking and the UI surfaces a flat `+X € SafeBack` badge (row) and total (KPI card). `HistoryBackfillService.SharesHeldAt` must count `SafeBack` shares so historical values stay consistent with the live snapshot. Use `POST /api/portfolio/{userId}/backfill?rebuild=true` after changing the replay logic: a plain re-run skips existing item rows and will not rewrite them (totals are recomputed either way). Mind the EOD free tier (20 calls/day) before triggering a full rebuild.
 
 `TransactionService.AddSafeBackAsync` merges the injection via `PortfolioService.ComputeWeightedAveragePrice` with `addedCostEur = AmountEur`. SafeBack is an external cash flow in both TWR (`ReturnCalculators.BuildExternalFlowsByDate`) and XIRR (`TransactionService.GetExternalFlowsAsync`), and it adds to the invested cost in `ComputeSimpleReturnSeries`/`ComputeItemReturnSeries`. `scripts/recalculate_safeback_costbasis.sql` recalculates `PurchasePrice` as `SUM(Buy + TransferIn + SafeBack AmountEur) / Shares` for items with historical SafeBacks; it is idempotent, so re-run it after restoring a backup or changing the cost model.
 
@@ -162,6 +176,7 @@ At the start of every session, read `notes/memory.md` and any other `*.md` files
 ## Project Scripts & Notes
 
 - `scripts/` — maintenance SQL (`rebuild_gold.sql`); `recalculate_safeback_costbasis.sql` recalculates cost basis for items with historical SafeBacks (idempotent).
+- `scripts/open_portfoliotracker.ps1` — one-click launcher (desktop shortcut `PortfolioTracker.lnk`): opens `http://localhost:8081`, starting Docker Desktop and the compose stack first if needed. `scripts/portfoliotracker.ico` is its icon.
 - `notes/` — session memory plus `notes/audit-2026-09-10.md` (full code audit with a resolution status section added on 11/09) and `notes/plan-multi-portfolio-import.md` (agreed plan for multi-portfolio support and broker CSV/PDF import).
 
 ## Common Gotchas

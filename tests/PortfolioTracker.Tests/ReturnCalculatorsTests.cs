@@ -311,6 +311,45 @@ public class ReturnCalculatorsTests
     }
 
     [Fact]
+    public void ComputeTwrSeries_NoFlowJumpOverThreshold_IsIgnoredAsDataArtifact()
+    {
+        // Real case: a fund's history was truncated at PurchaseDate, so the whole position
+        // "appeared" one day (+22%) with no flow. The level shift must be absorbed, while
+        // genuine moves before and after it keep counting.
+        var totals = new List<PortfolioHistoryPoint>
+        {
+            new() { Date = new DateTime(2026, 9, 2), ValueEur = 25000m, ItemId = Guid.Empty },
+            new() { Date = new DateTime(2026, 9, 3), ValueEur = 31000m, ItemId = Guid.Empty },
+            new() { Date = new DateTime(2026, 9, 4), ValueEur = 31310m, ItemId = Guid.Empty }
+        };
+
+        var result = ReturnCalculators.ComputeTwrSeries(totals, []);
+
+        Assert.Equal(0m, result[1].Value);   // artifact absorbed
+        Assert.Equal(1m, result[2].Value);   // +1% real move still compounds
+    }
+
+    [Fact]
+    public void ComputeTwrSeries_FlowDay_IsNotClampedByArtifactGuard()
+    {
+        // The guard only absorbs NO-FLOW jumps: a flow explains part of the change, so
+        // the residual move is booked as-is even when it exceeds the threshold.
+        var totals = new List<PortfolioHistoryPoint>
+        {
+            new() { Date = new DateTime(2026, 1, 1), ValueEur = 1000m, ItemId = Guid.Empty },
+            new() { Date = new DateTime(2026, 1, 2), ValueEur = 1360m, ItemId = Guid.Empty }
+        };
+        var flows = new Dictionary<DateTime, decimal>
+        {
+            [new DateTime(2026, 1, 2)] = 100m
+        };
+
+        var result = ReturnCalculators.ComputeTwrSeries(totals, flows);
+
+        Assert.Equal(26m, result[^1].Value);
+    }
+
+    [Fact]
     public void BuildExternalFlowsByDate_IncludesSafeBackAndExcludesTransfers()
     {
         var transactions = new List<PortfolioTransaction>

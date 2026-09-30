@@ -258,9 +258,25 @@ public class PortfolioService
         try
         {
             var today = DateTime.UtcNow.Date;
-            var pricedItems = items.Where(i => i.PriceAvailable).ToList();
-            if (pricedItems.Count == 0)
+            if (items.Count == 0)
                 return;
+
+            // Positions without a live price carry their last known value forward:
+            // dropping them from today's total would make the position "disappear" and
+            // the TWR would read that gap as a loss.
+            var unpricedIds = items.Where(i => !i.PriceAvailable).Select(i => i.Id).ToList();
+            var lastKnownByItem = new Dictionary<Guid, decimal>();
+            if (unpricedIds.Count > 0)
+            {
+                var lastKnown = await _context.PortfolioHistoryPoints
+                    .AsNoTracking()
+                    .Where(p => p.UserId == userId && p.Date < today && unpricedIds.Contains(p.ItemId))
+                    .ToListAsync();
+
+                lastKnownByItem = lastKnown
+                    .GroupBy(p => p.ItemId)
+                    .ToDictionary(g => g.Key, g => g.OrderByDescending(p => p.Date).First().ValueEur);
+            }
 
             var todaysRows = await _context.PortfolioHistoryPoints
                 .Where(p => p.UserId == userId && p.Date == today)
@@ -279,11 +295,26 @@ public class PortfolioService
                 _context.PortfolioHistoryPoints.Add(np);
             }
 
-            foreach (var item in pricedItems)
+            var total = 0m;
+            var hasValue = false;
+            foreach (var item in items)
             {
-                Upsert(item.Id, item.CurrentValue);
+                if (item.PriceAvailable)
+                {
+                    Upsert(item.Id, item.CurrentValue);
+                    total += item.CurrentValue;
+                    hasValue = true;
+                }
+                else if (lastKnownByItem.TryGetValue(item.Id, out var carried))
+                {
+                    Upsert(item.Id, carried);
+                    total += carried;
+                    hasValue = true;
+                }
             }
-            Upsert(Guid.Empty, pricedItems.Sum(i => i.CurrentValue));
+
+            if (hasValue)
+                Upsert(Guid.Empty, total);
 
             await _context.SaveChangesAsync();
         }
